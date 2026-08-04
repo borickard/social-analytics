@@ -100,7 +100,7 @@ stickprovsvalidera alkoholflaggorna mot råmaterialet innan analys.
 
 | Grupp | Kolumner |
 |---|---|
-| Identifiering | `video_id`, `url`, `publiceringsdatum` |
+| Identifiering | `video_id`, `url`, `publiceringsdatum`, `thumbnail` (`thumbnails/<id>.jpg`) |
 | Resultat (ström A) | `visningar`, `likes`, `kommentarer`, `delningar`, `sparade`, `engagement_rate`, `is_ad` (True = boostad) |
 | Caption | `caption`, `caption_langd`, `antal_hashtags`, `hashtags`, `musik`, `musik_original` (ja/nej) |
 | Innehåll (ström B) | `langd_verifierad`, `upplosning`, `bildformat`, `transkript`, `hook_text`, `format`, `tema`, `text_i_bild`, `grafik_beskrivning`, `personer_i_bild`, `cta` |

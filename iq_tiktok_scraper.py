@@ -81,7 +81,7 @@ CSV_FIELDS = [
     "visningar", "likes", "kommentarer", "delningar", "sparade",
     "engagement_rate",
     "caption", "caption_langd", "antal_hashtags", "hashtags",
-    "musik", "musik_original", "is_ad", "nedladdad",
+    "musik", "musik_original", "is_ad", "nedladdad", "thumbnail",
 ]
 # -----------------------------------------------------------------------------
 
@@ -120,6 +120,12 @@ def video_exists(video_id):
 def thumb_exists(video_id):
     """Finns thumbnailen redan nedladdad?"""
     return bool(glob.glob(os.path.join(THUMB_DIR, f"{video_id}.*")))
+
+
+def thumb_rel(video_id):
+    """Relativ sökväg (t.ex. thumbnails/<id>.jpg) om thumbnailen finns, annars tom."""
+    hits = glob.glob(os.path.join(THUMB_DIR, f"{video_id}.*"))
+    return os.path.relpath(hits[0], OUT_DIR) if hits else ""
 
 
 def collect_video_urls(page):
@@ -221,6 +227,7 @@ def parse_row(item):
         # isAd = boostad (verifierat mot känd data): True = boostad, False = organisk.
         "is_ad": item.get("isAd", ""),
         "nedladdad": "",
+        "thumbnail": "",   # sätts till thumbnails/<id>.jpg om filen finns
     }
 
 
@@ -284,6 +291,7 @@ def main():
                 if DOWNLOAD_VIDEOS and not (video_exists(vid) and thumb_exists(vid)):
                     print(f"[{i}/{len(urls)}] {vid} – metadata finns, hämtar video/thumbnail")
                     rows[vid]["nedladdad"] = download_video(url, vid)
+                    rows[vid]["thumbnail"] = thumb_rel(vid)
                     write_all(rows)
                 else:
                     print(f"[{i}/{len(urls)}] {vid} – redan klar, hoppar över")
@@ -315,6 +323,7 @@ def main():
                 row = parse_row(item)
                 if DOWNLOAD_VIDEOS:
                     row["nedladdad"] = download_video(url, row["video_id"])
+                row["thumbnail"] = thumb_rel(row["video_id"])
                 rows[row["video_id"]] = row     # infoga/ersätt
                 write_all(rows)                 # spara progress efter varje video
             except Exception as e:
