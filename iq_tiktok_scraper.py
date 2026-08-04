@@ -94,7 +94,7 @@ def load_existing():
     """Läs befintlig CSV till {video_id: rad} – för återupptagning/uppdatering."""
     rows = {}
     if os.path.exists(CSV_PATH):
-        with open(CSV_PATH, newline="", encoding="utf-8") as f:
+        with open(CSV_PATH, newline="", encoding="utf-8-sig") as f:
             for row in csv.DictReader(f):
                 rows[row["video_id"]] = row
     return rows
@@ -104,7 +104,7 @@ def write_all(rows):
     """Skriv hela CSV:n atomiskt (via en temp-fil) från {video_id: rad}.
     Atomiskt = ett avbrott mitt i skrivningen lämnar aldrig en trasig CSV."""
     tmp = CSV_PATH + ".tmp"
-    with open(tmp, "w", newline="", encoding="utf-8") as f:
+    with open(tmp, "w", newline="", encoding="utf-8-sig") as f:
         w = csv.DictWriter(f, fieldnames=CSV_FIELDS, extrasaction="ignore")
         w.writeheader()
         for row in rows.values():

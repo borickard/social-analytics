@@ -234,7 +234,7 @@ def load_enriched():
     """Läs befintlig enriched-CSV till {video_id: rad} – för återupptagning."""
     rows = {}
     if os.path.exists(OUT_CSV):
-        with open(OUT_CSV, newline="", encoding="utf-8") as f:
+        with open(OUT_CSV, newline="", encoding="utf-8-sig") as f:
             for r in csv.DictReader(f):
                 rows[r["video_id"]] = r
     return rows
@@ -243,7 +243,7 @@ def load_enriched():
 def write_all(rows, out_fields):
     """Skriv hela enriched-CSV:n atomiskt – ett avbrott lämnar inte en trasig fil."""
     tmp = OUT_CSV + ".tmp"
-    with open(tmp, "w", newline="", encoding="utf-8") as f:
+    with open(tmp, "w", newline="", encoding="utf-8-sig") as f:
         w = csv.DictWriter(f, fieldnames=out_fields, extrasaction="ignore")
         w.writeheader()
         for r in rows.values():
@@ -255,7 +255,7 @@ def main():
     if not os.path.exists(IN_CSV):
         sys.exit(f"Hittar inte {IN_CSV} – kör iq_tiktok_scraper.py först.")
 
-    rows_a = list(csv.DictReader(open(IN_CSV, newline="", encoding="utf-8")))
+    rows_a = list(csv.DictReader(open(IN_CSV, newline="", encoding="utf-8-sig")))
     if not rows_a:
         sys.exit(f"{IN_CSV} är tom.")
     out_fields = list(rows_a[0].keys()) + CONTENT_FIELDS
