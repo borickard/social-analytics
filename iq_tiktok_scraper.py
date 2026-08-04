@@ -60,6 +60,9 @@ USE_CHROME_COOKIES = True       # låter yt-dlp använda din Chrome-inloggning
 # Snäll, mänsklig takt – minskar risk för strypning. Öka vid problem.
 MIN_DELAY, MAX_DELAY = 2.5, 5.0
 
+# Begränsa antal videor (nyast först). Bra för att testa. Sätt 0 för alla.
+MAX_VIDEOS = 20
+
 CSV_FIELDS = [
     "video_id", "url", "publiceringsdatum", "langd_sek",
     "visningar", "likes", "kommentarer", "delningar", "sparade",
@@ -104,7 +107,16 @@ def collect_video_urls(page):
         page.mouse.wheel(0, 4000)
         time.sleep(random.uniform(1.5, 3.0))
     print(f"Hittade {len(seen)} videor.")
-    return sorted(seen)
+
+    # Sortera nyast först (TikToks video-id växer med tiden), begränsa ev.
+    def _vid_id(u):
+        tail = u.rstrip("/").split("/")[-1]
+        return int(tail) if tail.isdigit() else 0
+    ordered = sorted(seen, key=_vid_id, reverse=True)
+    if MAX_VIDEOS:
+        ordered = ordered[:MAX_VIDEOS]
+        print(f"Begränsar till {len(ordered)} nyaste (MAX_VIDEOS={MAX_VIDEOS}).")
+    return ordered
 
 
 def dig(d, *path, default=None):
