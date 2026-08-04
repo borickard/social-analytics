@@ -92,7 +92,11 @@ def collect_video_urls(page):
         hrefs = page.eval_on_selector_all(
             'a[href*="/video/"]', "els => els.map(e => e.href)")
         before = len(seen)
-        seen.update(h.split("?")[0] for h in hrefs if "/video/" in h)
+        # Ta bara IQ:s EGNA videor. Profilsidan innehåller även rekommenderade
+        # klipp från andra konton – utan filtret slinker de med.
+        own_prefix = PROFILE_URL.rstrip("/") + "/video/"
+        seen.update(h.split("?")[0] for h in hrefs
+                    if h.split("?")[0].startswith(own_prefix))
         if len(seen) == before:
             stagnant += 1
         else:
