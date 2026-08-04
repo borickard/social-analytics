@@ -106,6 +106,7 @@ stickprovsvalidera alkoholflaggorna mot råmaterialet innan analys.
 | Innehåll (ström B) | `langd_verifierad`, `upplosning`, `bildformat`, `transkript`, `hook_text`, `hook_typ`, `format`, `kategori`, `tema`, `text_i_bild`, `grafik_beskrivning`, `personer_i_bild`, `medverkande`, `cta`, `har_cta` |
 | Detektionsflaggor | `alkohol_i_bild`, `alkohol_marke`, `alkohol_omnamns_verbalt`, `alkohol_kontext` |
 | Nyckeltal (uträknade) | `save_rate`, `share_rate`, `likes_per_view` |
+| Räckvidd (manuell) | `rackvidd` – lämnas tom, fylls i i efterhand från TikTok Studio (joinas på `video_id`) |
 
 Kategoriska fält (`hook_typ`, `format`, `kategori`, `medverkande`, `har_cta`,
 alkoholflaggorna) har fasta värden och är gjorda för att gruppera/aggregera på i

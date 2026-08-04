@@ -66,6 +66,7 @@ CONTENT_FIELDS = [
     "cta", "har_cta",
     "alkohol_i_bild", "alkohol_marke", "alkohol_omnamns_verbalt", "alkohol_kontext",
     "save_rate", "share_rate", "likes_per_view",
+    "rackvidd",   # lämnas tom – fylls i manuellt från TikTok Studio (reach)
 ]
 
 # Fälten vision-modellen ska returnera per video (härledda fält som
@@ -359,9 +360,12 @@ def main():
             continue
         print(f"[{i}/{len(todo)}] {vid}")
         mp4 = find_video(vid)
+        prev_rackvidd = enriched.get(vid, {}).get("rackvidd", "")  # bevara ev. manuell reach
         if not mp4:
             print("  ! ingen videofil – skriver bara ström A-raden")
-            enriched[vid] = add_derived(dict(row))
+            arow = add_derived(dict(row))
+            arow["rackvidd"] = prev_rackvidd
+            enriched[vid] = arow
             write_all(enriched, out_fields)
             continue
         try:
@@ -379,6 +383,7 @@ def main():
             for k in VISION_KEYS:
                 row[k] = vision.get(k, "")
             add_derived(row)
+            row["rackvidd"] = prev_rackvidd   # bevara ev. manuellt inklistrad reach
             enriched[vid] = row
             write_all(enriched, out_fields)   # spara progress efter varje video
             print(f"    hittills ~${est_cost():.2f}  "
