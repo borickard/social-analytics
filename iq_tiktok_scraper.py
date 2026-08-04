@@ -71,7 +71,7 @@ CSV_FIELDS = [
     "visningar", "likes", "kommentarer", "delningar", "sparade",
     "engagement_rate",
     "caption", "caption_langd", "antal_hashtags", "hashtags",
-    "musik", "is_ad", "ad_metadata", "nedladdad",
+    "musik", "boostad", "is_ad", "ad_metadata", "nedladdad",
 ]
 
 # Nyckel-ledtrådar för annons-/betalrelaterade fält i den inbäddade JSON:en.
@@ -211,6 +211,9 @@ def parse_row(item):
         "antal_hashtags": len(hashtags),
         "hashtags": " ".join(hashtags),
         "musik": dig(item, "music", "title", default=""),
+        # isAd speglar boost-status för IQ:s konto (verifierat mot känd data).
+        "boostad": ("ja" if item.get("isAd") is True
+                    else "nej" if item.get("isAd") is False else ""),
         "is_ad": item.get("isAd", ""),
         "ad_metadata": json.dumps(ad_fields, ensure_ascii=False) if ad_fields else "",
         "nedladdad": "",

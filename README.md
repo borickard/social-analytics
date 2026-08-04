@@ -82,7 +82,7 @@ stickprovsvalidera alkoholflaggorna mot råmaterialet innan analys.
 | Grupp | Kolumner |
 |---|---|
 | Identifiering | `video_id`, `url`, `publiceringsdatum` |
-| Resultat (ström A) | `visningar`, `likes`, `kommentarer`, `delningar`, `sparade`, `engagement_rate` |
+| Resultat (ström A) | `visningar`, `likes`, `kommentarer`, `delningar`, `sparade`, `engagement_rate`, `boostad` (ja/nej, från `isAd`), `is_ad`, `ad_metadata` |
 | Caption | `caption`, `caption_langd`, `antal_hashtags`, `hashtags`, `musik` |
 | Innehåll (ström B) | `langd_verifierad`, `upplosning`, `bildformat`, `transkript`, `hook_text`, `format`, `tema`, `text_i_bild`, `grafik_beskrivning`, `personer_i_bild`, `cta` |
 | Detektionsflaggor | `alkohol_i_bild`, `alkohol_marke`, `alkohol_omnamns_verbalt`, `alkohol_kontext` |
