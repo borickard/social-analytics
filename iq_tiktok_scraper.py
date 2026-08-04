@@ -236,6 +236,13 @@ def main():
                 if not item:
                     print("  ! ingen data hittad – hoppar över")
                     continue
+                # Skyddsnät: skriv bara om laddad video matchar URL:ens id.
+                # Skyddar mot att en råkad scroll byter klipp mitt i läsningen –
+                # en felläsning skrivs aldrig, den plockas upp vid nästa körning.
+                if str(item.get("id", "")) != str(vid):
+                    print(f"  ! fel video laddad (fick id {item.get('id')}), "
+                          "hoppar över – körs igen nästa gång")
+                    continue
                 with open(RAW_PATH, "a", encoding="utf-8") as f:
                     f.write(json.dumps(item, ensure_ascii=False) + "\n")
                 row = parse_row(item)
