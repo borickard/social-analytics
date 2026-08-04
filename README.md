@@ -18,9 +18,9 @@ Två dataströmmar som joinas på `video_id`:
    • läs metrics + caption ur inbäddad JSON
    • ladda ner videofil (yt-dlp)
        │
-       ├── ~/iq_tiktok_data/iq_tiktok_metrics.csv   (siffror + caption)
-       ├── ~/iq_tiktok_data/videos/<id>.mp4         (för ström B)
-       └── ~/iq_tiktok_data/iq_tiktok_raw.jsonl     (rå fallback)
+       ├── iq_tiktok_data/iq_tiktok_metrics.csv   (siffror + caption)
+       ├── iq_tiktok_data/videos/<id>.mp4         (för ström B)
+       └── iq_tiktok_data/iq_tiktok_raw.jsonl     (rå fallback)
        │
        ▼
  [ Ström B: iq_tiktok_content_pipeline.py ]   ← innehållsanalys
@@ -30,7 +30,7 @@ Två dataströmmar som joinas på `video_id`:
    • Claude   → vad visas, text i bild (OCR), format, alkoholflaggor
        │
        ▼
-   ~/iq_tiktok_data/iq_tiktok_enriched.csv   ← berikad CSV för analys
+   iq_tiktok_data/iq_tiktok_enriched.csv   ← berikad CSV för analys
 ```
 
 **Räckvidd (reach) ingår medvetet inte** – det kräver TikTok Studio. Vi utgår
@@ -60,9 +60,10 @@ python iq_tiktok_scraper.py
 ```
 
 Första gången öppnas ett Chrome-fönster: logga in på TikTok och tryck ENTER i
-terminalen. Rekommendation: sätt `DOWNLOAD_VIDEOS = False` i skriptet allra
-första körningen för att verifiera att siffrorna kommer ut rätt, sätt sedan
-`True` och kör hela profilen. Körningen är återupptagbar.
+terminalen. Standard är `DOWNLOAD_VIDEOS = False` (bara siffror – snabbt att
+verifiera). Sätt `True` när du vill ladda ner videofilerna som Ström B behöver.
+`MAX_VIDEOS` begränsar antalet (nyast först); sätt `0` för alla. Körningen är
+återupptagbar, och datan hamnar i `iq_tiktok_data/` i projektmappen.
 
 **2. Ström B – innehållspipeline**
 

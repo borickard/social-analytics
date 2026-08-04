@@ -23,7 +23,9 @@ import subprocess
 import sys
 import tempfile
 
-DATA = os.path.expanduser("~/iq_tiktok_data")
+# Samma datamapp som scrapern skriver till: en undermapp i projektet.
+PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
+DATA = os.path.join(PROJECT_DIR, "iq_tiktok_data")
 VIDEO_DIR = os.path.join(DATA, "videos")
 IN_CSV = os.path.join(DATA, "iq_tiktok_metrics.csv")
 OUT_CSV = os.path.join(DATA, "iq_tiktok_enriched.csv")

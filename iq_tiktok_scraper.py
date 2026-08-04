@@ -49,12 +49,15 @@ PROFILE_URL = "https://www.tiktok.com/@iqinitiativet"
 # En egen mapp för Chrome-profilen som skriptet använder (håller inloggningen).
 USER_DATA_DIR = os.path.expanduser("~/iq_tiktok_chrome_profil")
 
-OUT_DIR = os.path.expanduser("~/iq_tiktok_data")
+# Datan hamnar i en undermapp i projektet (bredvid skriptet), oavsett var du
+# står i Terminal. Mappen är gitignore:ad så den laddas aldrig upp.
+PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
+OUT_DIR = os.path.join(PROJECT_DIR, "iq_tiktok_data")
 VIDEO_DIR = os.path.join(OUT_DIR, "videos")
 CSV_PATH = os.path.join(OUT_DIR, "iq_tiktok_metrics.csv")
 RAW_PATH = os.path.join(OUT_DIR, "iq_tiktok_raw.jsonl")
 
-DOWNLOAD_VIDEOS = True          # sätt False om du bara vill ha siffrorna först
+DOWNLOAD_VIDEOS = False         # sätt True för att även ladda ner videofilerna
 USE_CHROME_COOKIES = True       # låter yt-dlp använda din Chrome-inloggning
 
 # Snäll, mänsklig takt – minskar risk för strypning. Öka vid problem.
