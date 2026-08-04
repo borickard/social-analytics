@@ -203,8 +203,9 @@ def get_whisper():
     global _WHISPER
     if _WHISPER is None:
         from faster_whisper import WhisperModel
-        print(f"Laddar Whisper-modell '{WHISPER_MODEL}' "
-              "(första gången laddas den ner – kan ta ett tag)...")
+        print(f"Läser in Whisper-modell '{WHISPER_MODEL}' "
+              "(laddas ner bara om den saknas i cachen; annars läses den bara "
+              "in i minnet – kan ta en stund)...")
         _WHISPER = WhisperModel(WHISPER_MODEL, device="auto", compute_type="int8")
     return _WHISPER
 
