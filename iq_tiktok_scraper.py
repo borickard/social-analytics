@@ -91,20 +91,30 @@ def collect_video_urls(page):
     """Scrolla profilen tills antalet länkar slutar växa; returnera URL:erna."""
     print("Scrollar profilen för att ladda alla klipp ...")
     seen, stagnant = set(), 0
-    while stagnant < 4:
+    # Ta bara IQ:s EGNA videor. Profilsidan innehåller även rekommenderade
+    # klipp från andra konton – utan filtret slinker de med.
+    own_prefix = PROFILE_URL.rstrip("/") + "/video/"
+    while stagnant < 5:
         hrefs = page.eval_on_selector_all(
             'a[href*="/video/"]', "els => els.map(e => e.href)")
         before = len(seen)
-        # Ta bara IQ:s EGNA videor. Profilsidan innehåller även rekommenderade
-        # klipp från andra konton – utan filtret slinker de med.
-        own_prefix = PROFILE_URL.rstrip("/") + "/video/"
         seen.update(h.split("?")[0] for h in hrefs
                     if h.split("?")[0].startswith(own_prefix))
-        if len(seen) == before:
-            stagnant += 1
-        else:
-            stagnant = 0
-        page.mouse.wheel(0, 4000)
+        # Nyaste ligger överst, så vid en begränsad testkörning kan vi sluta
+        # så fort vi har tillräckligt – slipper scrolla hela profilen.
+        if MAX_VIDEOS and len(seen) >= MAX_VIDEOS:
+            break
+        stagnant = stagnant + 1 if len(seen) == before else 0
+        # Robust scroll: rulla dokumentet hela vägen ner + putta sista kortet
+        # i vy. page.mouse.wheel kräver rätt muspekarläge och missar ofta.
+        page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+        page.evaluate(
+            "() => { const a = document.querySelectorAll('a[href*=\"/video/\"]');"
+            " if (a.length) a[a.length - 1].scrollIntoView(); }")
+        try:
+            page.keyboard.press("End")
+        except Exception:
+            pass
         time.sleep(random.uniform(1.5, 3.0))
     print(f"Hittade {len(seen)} videor.")
 
