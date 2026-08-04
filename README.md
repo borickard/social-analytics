@@ -103,8 +103,14 @@ stickprovsvalidera alkoholflaggorna mot råmaterialet innan analys.
 | Identifiering | `video_id`, `url`, `publiceringsdatum`, `thumbnail` (`thumbnails/<id>.jpg`) |
 | Resultat (ström A) | `visningar`, `likes`, `kommentarer`, `delningar`, `sparade`, `engagement_rate`, `is_ad` (True = boostad) |
 | Caption | `caption`, `caption_langd`, `antal_hashtags`, `hashtags`, `musik`, `musik_original` (ja/nej) |
-| Innehåll (ström B) | `langd_verifierad`, `upplosning`, `bildformat`, `transkript`, `hook_text`, `format`, `tema`, `text_i_bild`, `grafik_beskrivning`, `personer_i_bild`, `cta` |
+| Innehåll (ström B) | `langd_verifierad`, `upplosning`, `bildformat`, `transkript`, `hook_text`, `hook_typ`, `format`, `kategori`, `tema`, `text_i_bild`, `grafik_beskrivning`, `personer_i_bild`, `medverkande`, `cta`, `har_cta` |
 | Detektionsflaggor | `alkohol_i_bild`, `alkohol_marke`, `alkohol_omnamns_verbalt`, `alkohol_kontext` |
+| Nyckeltal (uträknade) | `save_rate`, `share_rate`, `likes_per_view` |
+
+Kategoriska fält (`hook_typ`, `format`, `kategori`, `medverkande`, `har_cta`,
+alkoholflaggorna) har fasta värden och är gjorda för att gruppera/aggregera på i
+analysen. Fri text (`tema`, `text_i_bild`, `grafik_beskrivning`,
+`personer_i_bild`, `transkript`) finns kvar som komplement.
 
 Detektionstaxonomin (alkoholflaggorna) är lätt att utöka: lägg till fält i
 `VISION_SCHEMA` / `VISION_KEYS` i `iq_tiktok_content_pipeline.py`.

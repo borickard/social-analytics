@@ -40,6 +40,19 @@ WHISPER_MODEL = os.environ.get("IQ_WHISPER_MODEL", "large-v3")
 # Testläge: analysera bara de N första (0 = alla). T.ex. IQ_LIMIT=3 för ett test.
 LIMIT = int(os.environ.get("IQ_LIMIT", "0") or 0)
 
+# Ungefärligt pris (USD per miljon tokens) för den löpande kostnadsräknaren.
+# Uppskattning – Sonnet 5 har intropris (~$2/$10) t.o.m. 2026-08-31.
+PRICING = {
+    "claude-opus-5": (5.0, 25.0),
+    "claude-sonnet-5": (3.0, 15.0),
+}
+USAGE = {"in": 0, "out": 0}   # ackumuleras i call_vision()
+
+
+def est_cost():
+    pin, pout = PRICING.get(VISION_MODEL, PRICING["claude-opus-5"])
+    return USAGE["in"] / 1e6 * pin + USAGE["out"] / 1e6 * pout
+
 # Verbala alkohol-nyckelord (korsas mot transkriptet i main()).
 ALKOHOL_ORD = ["alkohol", "öl", "vin", "sprit", "drink", "bärs", "cider",
                "champagne", "bubbel", "shot", "systembolag", "fylla", "berusad"]
@@ -47,17 +60,20 @@ ALKOHOL_ORD = ["alkohol", "öl", "vin", "sprit", "drink", "bärs", "cider",
 # Fälten Ström B lägger till (utöver Ström A-fälten):
 CONTENT_FIELDS = [
     "langd_verifierad", "upplosning", "bildformat",
-    "transkript", "hook_text", "format", "tema",
-    "text_i_bild", "grafik_beskrivning", "personer_i_bild", "cta",
+    "transkript", "hook_text", "hook_typ",
+    "format", "kategori", "tema",
+    "text_i_bild", "grafik_beskrivning", "personer_i_bild", "medverkande",
+    "cta", "har_cta",
     "alkohol_i_bild", "alkohol_marke", "alkohol_omnamns_verbalt", "alkohol_kontext",
+    "save_rate", "share_rate", "likes_per_view",
 ]
 
-# Fälten vision-modellen ska returnera per video (allt utom
-# alkohol_omnamns_verbalt, som härleds ur transkriptet i main()).
+# Fälten vision-modellen ska returnera per video (härledda fält som
+# alkohol_omnamns_verbalt, har_cta och *_rate sätts i main(), inte här).
 VISION_KEYS = [
-    "format", "tema", "text_i_bild", "grafik_beskrivning",
-    "personer_i_bild", "cta", "alkohol_i_bild", "alkohol_marke",
-    "alkohol_kontext",
+    "format", "kategori", "tema", "hook_typ",
+    "text_i_bild", "grafik_beskrivning", "personer_i_bild", "medverkande",
+    "cta", "alkohol_i_bild", "alkohol_marke", "alkohol_kontext",
 ]
 
 # JSON Schema som styr modellens utdata (structured outputs).
@@ -71,7 +87,18 @@ VISION_SCHEMA = {
                      "animerat", "ovrigt"],
             "description": "Övergripande videoformat.",
         },
-        "tema": {"type": "string", "description": "Kort ämnesetikett på svenska."},
+        "kategori": {
+            "type": "string",
+            "enum": ["gatuintervju", "faktatips", "forstahjalpen", "myt_vs_fakta",
+                     "personlig_berattelse", "quiz_lek", "ovrigt"],
+            "description": "Innehållstyp/kategori. Välj 'ovrigt' om inget passar.",
+        },
+        "tema": {"type": "string", "description": "Kort ämnesetikett på svenska (fri text)."},
+        "hook_typ": {
+            "type": "string",
+            "enum": ["fraga", "pastaende", "chock", "humor", "statistik", "ovrigt"],
+            "description": "Typ av hook i de första sekunderna (utifrån tal + första bilden).",
+        },
         "text_i_bild": {
             "type": "string",
             "description": "All synlig text/overlays i klippet (OCR), svensk text ordagrant.",
@@ -82,9 +109,18 @@ VISION_SCHEMA = {
         },
         "personer_i_bild": {
             "type": "string",
-            "description": "Antal och typ av personer som syns.",
+            "description": "Antal och typ av personer som syns (fri text).",
         },
-        "cta": {"type": "string", "description": "Ev. uppmaning (call to action), annars tom sträng."},
+        "medverkande": {
+            "type": "string",
+            "enum": ["ingen", "en_person", "flera_personer"],
+            "description": "Antal synliga medverkande personer (kategori).",
+        },
+        "cta": {
+            "type": "string",
+            "description": "Uppmaning (call to action) – talad, i bild ELLER länk i caption. "
+                           "Återge den kort, annars tom sträng.",
+        },
         "alkohol_i_bild": {
             "type": "string",
             "enum": ["ja", "nej"],
@@ -106,12 +142,17 @@ VISION_SCHEMA = {
 VISION_PROMPT = (
     "Du analyserar en TikTok-video från IQ (iqinitiativet), en svensk "
     "organisation som arbetar för en smartare attityd till alkohol.\n\n"
-    "Du får ett antal nyckelbilder ur videon (i ordning) samt ett transkript "
-    "av det som sägs. Beskriva INNEHÅLLET och fyll i den begärda strukturen.\n\n"
+    "Du får ett antal nyckelbilder ur videon (i ordning), ett transkript av "
+    "det som sägs samt videons caption. Beskriv INNEHÅLLET och fyll i "
+    "strukturen.\n\n"
     "Instruktioner:\n"
     "- Läs av (OCR) all text och grafik som syns i bild – återge svensk text "
     "ordagrant.\n"
-    "- Bedöm videoformat, tema, personer i bild och ev. uppmaning (CTA).\n"
+    "- Bedöm videoformat och innehållskategori. Klassa hook_typ utifrån de "
+    "första sekunderna (tal + första bilden).\n"
+    "- medverkande: ingen / en_person / flera_personer.\n"
+    "- CTA: fånga uppmaning oavsett om den är talad, syns i bild eller är en "
+    "länk i captionen (t.ex. en webbadress). Tom sträng om ingen finns.\n"
     "- Detektionstaxonomi (alkohol): avgör om alkohol SYNS i bild "
     "(dryck/flaska/glas/burk), identifiera ev. varumärken, och klassa "
     "sammanhanget. Räkna INTE alkoholfri dryck som alkohol.\n"
@@ -179,10 +220,10 @@ def find_video(video_id):
     return hits[0] if hits else None
 
 
-def call_vision(frames, transcript):
+def call_vision(frames, transcript, caption=""):
     """
-    Skicka nyckelbilderna + transkriptet till Claude och be om JSON enligt
-    VISION_SCHEMA. Returnerar ett dict med nycklarna i VISION_KEYS.
+    Skicka nyckelbilderna + transkriptet + captionen till Claude och be om JSON
+    enligt VISION_SCHEMA. Returnerar ett dict med nycklarna i VISION_KEYS.
 
     Robust: vid fel loggas det och tomma värden returneras så att pipelinen
     kan fortsätta (rådata finns kvar i CSV:n som ström A skrev).
@@ -206,7 +247,8 @@ def call_vision(frames, transcript):
         })
     content.append({
         "type": "text",
-        "text": f"Transkript av det som sägs:\n{transcript or '(inget tal)'}",
+        "text": (f"Transkript av det som sägs:\n{transcript or '(inget tal)'}\n\n"
+                 f"Caption:\n{caption or '(ingen)'}"),
     })
 
     client = anthropic.Anthropic()
@@ -217,6 +259,9 @@ def call_vision(frames, transcript):
             messages=[{"role": "user", "content": content}],
             output_config={"format": {"type": "json_schema", "schema": VISION_SCHEMA}},
         )
+        # Räkna tokens för den löpande kostnadsuppskattningen.
+        USAGE["in"] += getattr(response.usage, "input_tokens", 0) or 0
+        USAGE["out"] += getattr(response.usage, "output_tokens", 0) or 0
         # Med structured outputs ligger giltig JSON i första text-blocket.
         text = next((b.text for b in response.content if b.type == "text"), None)
         if not text:
@@ -251,6 +296,24 @@ def write_all(rows, out_fields):
     os.replace(tmp, OUT_CSV)
 
 
+def _rate(num, den):
+    """Andel (num/den) avrundad; tom sträng om det inte går att räkna."""
+    try:
+        n, d = float(num), float(den)
+        return round(n / d, 6) if d else ""
+    except (TypeError, ValueError):
+        return ""
+
+
+def add_derived(row):
+    """Härledda nyckeltal ur Ström A-siffrorna + har_cta ur cta-fältet."""
+    row["save_rate"] = _rate(row.get("sparade"), row.get("visningar"))
+    row["share_rate"] = _rate(row.get("delningar"), row.get("visningar"))
+    row["likes_per_view"] = _rate(row.get("likes"), row.get("visningar"))
+    row["har_cta"] = "ja" if (row.get("cta") or "").strip() else "nej"
+    return row
+
+
 def main():
     if not os.path.exists(IN_CSV):
         sys.exit(f"Hittar inte {IN_CSV} – kör iq_tiktok_scraper.py först.")
@@ -276,7 +339,7 @@ def main():
         mp4 = find_video(vid)
         if not mp4:
             print("  ! ingen videofil – skriver bara ström A-raden")
-            enriched[vid] = row
+            enriched[vid] = add_derived(dict(row))
             write_all(enriched, out_fields)
             continue
         try:
@@ -284,7 +347,7 @@ def main():
             transcript, hook = transcribe(mp4)
             with tempfile.TemporaryDirectory() as tmp:
                 frames = extract_keyframes(mp4, tmp)
-                vision = call_vision(frames, transcript)
+                vision = call_vision(frames, transcript, row.get("caption", ""))
             row.update(meta)
             row["transkript"] = transcript
             row["hook_text"] = hook
@@ -293,11 +356,14 @@ def main():
                 else "nej")
             for k in VISION_KEYS:
                 row[k] = vision.get(k, "")
+            add_derived(row)
             enriched[vid] = row
             write_all(enriched, out_fields)   # spara progress efter varje video
+            print(f"    hittills ~${est_cost():.2f}  "
+                  f"({USAGE['in']:,}/{USAGE['out']:,} tokens in/ut)")
         except Exception as e:
             print(f"  ! fel på {vid}: {e}")
-    print("Klart:", OUT_CSV)
+    print(f"\nKlart: {OUT_CSV}\nUppskattad vision-kostnad: ~${est_cost():.2f}")
 
 
 if __name__ == "__main__":
