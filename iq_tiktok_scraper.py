@@ -71,8 +71,12 @@ CSV_FIELDS = [
     "visningar", "likes", "kommentarer", "delningar", "sparade",
     "engagement_rate",
     "caption", "caption_langd", "antal_hashtags", "hashtags",
-    "musik", "nedladdad",
+    "musik", "is_ad", "ad_metadata", "nedladdad",
 ]
+
+# Nyckel-ledtrådar för annons-/betalrelaterade fält i den inbäddade JSON:en.
+AD_KEY_HINTS = ("isad", "paid", "promot", "commerce", "sponsor", "brand",
+                "adauthor", "adlabel", "advert")
 # -----------------------------------------------------------------------------
 
 
@@ -141,6 +145,31 @@ def dig(d, *path, default=None):
     return d
 
 
+def extract_ad_fields(item):
+    """
+    Samla alla annons-/betalrelaterade fält som TikTok exponerar för videon.
+    Skannar toppnivån + kända nästlade behållare (commerce/ad-info) och tar med
+    allt vars nyckel matchar AD_KEY_HINTS. Så ser vi vad som FAKTISKT finns i
+    datan i stället för att gissa – och missar inget om TikTok byter namn.
+    """
+    found = {}
+
+    def scan(d, prefix=""):
+        if not isinstance(d, dict):
+            return
+        for k, v in d.items():
+            if isinstance(v, (dict, list)):
+                continue
+            if any(h in str(k).lower() for h in AD_KEY_HINTS):
+                found[prefix + str(k)] = v
+
+    scan(item)
+    for container in ("commerceInfo", "commerce_info", "adInfo", "BAInfo",
+                      "adInfoV2", "item_control"):
+        scan(item.get(container), prefix=f"{container}.")
+    return found
+
+
 def extract_item(page):
     """Plocka ut itemStruct ur den inbäddade rehydration-JSON:en."""
     raw = page.eval_on_selector(
@@ -155,6 +184,7 @@ def parse_row(item):
     stats = item.get("stats", {}) or item.get("statsV2", {})
     desc = item.get("desc", "") or ""
     hashtags = re.findall(r"#(\w+)", desc)
+    ad_fields = extract_ad_fields(item)
     views = int(stats.get("playCount", 0) or 0)
     likes = int(stats.get("diggCount", 0) or 0)
     comments = int(stats.get("commentCount", 0) or 0)
@@ -181,6 +211,8 @@ def parse_row(item):
         "antal_hashtags": len(hashtags),
         "hashtags": " ".join(hashtags),
         "musik": dig(item, "music", "title", default=""),
+        "is_ad": item.get("isAd", ""),
+        "ad_metadata": json.dumps(ad_fields, ensure_ascii=False) if ad_fields else "",
         "nedladdad": "",
     }
 
