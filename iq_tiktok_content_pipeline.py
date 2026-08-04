@@ -100,8 +100,10 @@ VISION_SCHEMA = {
             "description": "Typ av hook i de första sekunderna (utifrån tal + första bilden).",
         },
         "text_i_bild": {
-            "type": "string",
-            "description": "All synlig text/overlays i klippet (OCR), svensk text ordagrant.",
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "Lista med all synlig text/overlays i klippet (OCR) – "
+                           "ett element per textblock, svensk text ordagrant.",
         },
         "grafik_beskrivning": {
             "type": "string",
@@ -268,8 +270,14 @@ def call_vision(frames, transcript, caption=""):
             print("  ! vision: inget text-svar")
             return empty
         data = json.loads(text)
-        # Se till att alla förväntade nycklar finns.
-        return {k: data.get(k, empty[k]) for k in VISION_KEYS}
+        # Se till att alla nycklar finns. List-fält (t.ex. text_i_bild) sparas
+        # som JSON-sträng i cellen så de går att bryta ut exakt senare med
+        # json.loads – oberoende av vilka tecken texten själv innehåller.
+        out = {}
+        for k in VISION_KEYS:
+            v = data.get(k, empty[k])
+            out[k] = json.dumps(v, ensure_ascii=False) if isinstance(v, list) else v
+        return out
     except Exception as e:
         print(f"  ! vision misslyckades: {e}")
         return empty
