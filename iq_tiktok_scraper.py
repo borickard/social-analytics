@@ -33,6 +33,7 @@ Kör:
 """
 
 import csv
+import glob
 import json
 import os
 import random
@@ -60,6 +61,14 @@ RAW_PATH = os.path.join(OUT_DIR, "iq_tiktok_raw.jsonl")
 DOWNLOAD_VIDEOS = False         # sätt True för att även ladda ner videofilerna
 USE_CHROME_COOKIES = True       # låter yt-dlp använda din Chrome-inloggning
 
+# Återupptagning:
+#   True  = hoppa över videor som redan har metadata (ladda ändå ner ev.
+#           saknade videofiler). Bra för att fortsätta en avbruten körning
+#           eller för att köra steg 2 (nedladdning) efter steg 1 (metadata).
+#   False = hämta om metadatan och UPPDATERA siffrorna (visningar/likes ändras
+#           ju över tid). Videofiler som redan finns laddas aldrig ner på nytt.
+SKIP_SCRAPED = True
+
 # Snäll, mänsklig takt – minskar risk för strypning. Öka vid problem.
 MIN_DELAY, MAX_DELAY = 2.5, 5.0
 
@@ -80,14 +89,31 @@ def sleep_a_bit():
     time.sleep(random.uniform(MIN_DELAY, MAX_DELAY))
 
 
-def already_done():
-    """Video-id:n som redan finns i CSV:n, för återupptagning."""
-    done = set()
+def load_existing():
+    """Läs befintlig CSV till {video_id: rad} – för återupptagning/uppdatering."""
+    rows = {}
     if os.path.exists(CSV_PATH):
         with open(CSV_PATH, newline="", encoding="utf-8") as f:
             for row in csv.DictReader(f):
-                done.add(row["video_id"])
-    return done
+                rows[row["video_id"]] = row
+    return rows
+
+
+def write_all(rows):
+    """Skriv hela CSV:n atomiskt (via en temp-fil) från {video_id: rad}.
+    Atomiskt = ett avbrott mitt i skrivningen lämnar aldrig en trasig CSV."""
+    tmp = CSV_PATH + ".tmp"
+    with open(tmp, "w", newline="", encoding="utf-8") as f:
+        w = csv.DictWriter(f, fieldnames=CSV_FIELDS, extrasaction="ignore")
+        w.writeheader()
+        for row in rows.values():
+            w.writerow(row)
+    os.replace(tmp, CSV_PATH)
+
+
+def video_exists(video_id):
+    """Finns videofilen redan nedladdad? (valfri filändelse)"""
+    return bool(glob.glob(os.path.join(VIDEO_DIR, f"{video_id}.*")))
 
 
 def collect_video_urls(page):
@@ -193,6 +219,9 @@ def parse_row(item):
 
 
 def download_video(url, video_id):
+    # Idempotent: en redan nedladdad video laddas aldrig ner igen.
+    if video_exists(video_id):
+        return "ja (fanns redan)"
     out = os.path.join(VIDEO_DIR, f"{video_id}.%(ext)s")
     cmd = ["yt-dlp", "--no-warnings", "-o", out, url]
     if USE_CHROME_COOKIES:
@@ -206,20 +235,12 @@ def download_video(url, video_id):
         return "nej"
 
 
-def append_csv(row):
-    new = not os.path.exists(CSV_PATH)
-    with open(CSV_PATH, "a", newline="", encoding="utf-8") as f:
-        w = csv.DictWriter(f, fieldnames=CSV_FIELDS)
-        if new:
-            w.writeheader()
-        w.writerow(row)
-
-
 def main():
     os.makedirs(VIDEO_DIR, exist_ok=True)
-    done = already_done()
-    if done:
-        print(f"Återupptar – {len(done)} videor redan klara, hoppar över dem.")
+    rows = load_existing()
+    if rows:
+        lage = "hoppar över dem" if SKIP_SCRAPED else "uppdaterar deras siffror"
+        print(f"{len(rows)} videor finns redan i CSV:n ({lage}).")
 
     with sync_playwright() as p:
         ctx = p.chromium.launch_persistent_context(
@@ -237,8 +258,19 @@ def main():
 
         for i, url in enumerate(urls, 1):
             vid = url.rstrip("/").split("/")[-1]
-            if vid in done:
+
+            # Återupptagningsläge: metadatan finns redan.
+            if SKIP_SCRAPED and vid in rows:
+                # Ladda ändå ner videon om den saknas (t.ex. steg 2 efter att
+                # steg 1 hämtat bara siffror). Finns den redan görs inget.
+                if DOWNLOAD_VIDEOS and not video_exists(vid):
+                    print(f"[{i}/{len(urls)}] {vid} – metadata finns, laddar ner video")
+                    rows[vid]["nedladdad"] = download_video(url, vid)
+                    write_all(rows)
+                else:
+                    print(f"[{i}/{len(urls)}] {vid} – redan klar, hoppar över")
                 continue
+
             print(f"[{i}/{len(urls)}] {url}")
             try:
                 page.goto(url, wait_until="domcontentloaded")
@@ -265,7 +297,8 @@ def main():
                 row = parse_row(item)
                 if DOWNLOAD_VIDEOS:
                     row["nedladdad"] = download_video(url, row["video_id"])
-                append_csv(row)
+                rows[row["video_id"]] = row     # infoga/ersätt
+                write_all(rows)                 # spara progress efter varje video
             except Exception as e:
                 print(f"  ! fel på {url}: {e}")
             sleep_a_bit()

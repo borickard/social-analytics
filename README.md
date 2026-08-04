@@ -60,10 +60,28 @@ python iq_tiktok_scraper.py
 ```
 
 Första gången öppnas ett Chrome-fönster: logga in på TikTok och tryck ENTER i
-terminalen. Standard är `DOWNLOAD_VIDEOS = False` (bara siffror – snabbt att
-verifiera). Sätt `True` när du vill ladda ner videofilerna som Ström B behöver.
-`MAX_VIDEOS` begränsar antalet (nyast först); sätt `0` för alla. Körningen är
-återupptagbar, och datan hamnar i `iq_tiktok_data/` i projektmappen.
+terminalen. Datan hamnar i `iq_tiktok_data/` i projektmappen.
+
+Inställningar (överst i skriptet):
+
+| Inställning | Betydelse |
+|---|---|
+| `DOWNLOAD_VIDEOS` | `False` = bara siffror (snabbt). `True` = ladda även ner videofilerna som Ström B behöver. |
+| `MAX_VIDEOS` | Begränsa antal (nyast först). `0` = alla. Bra för att testa. |
+| `SKIP_SCRAPED` | `True` = återuppta: hoppa över videor som redan har metadata (men ladda ändå ner ev. saknade videofiler). `False` = hämta om och **uppdatera siffrorna** (visningar/likes ändras över tid). |
+
+**Återupptagbart & idempotent.** Progress sparas efter *varje* video, så ett
+avbrott (Ctrl+C, nätverksfel) förlorar inget – kör bara igen. En redan
+nedladdad videofil laddas **aldrig** ner på nytt.
+
+**Stor körning (~600 videor) – två sätt, båda fungerar:**
+- *Allt i ett:* sätt `DOWNLOAD_VIDEOS = True` och `MAX_VIDEOS = 0`, kör en gång. Enklast.
+- *Två steg:* kör först med `DOWNLOAD_VIDEOS = False` (alla siffror, går fortare
+  att få en komplett CSV att ögna på), sätt sedan `DOWNLOAD_VIDEOS = True` och
+  kör igen – då hämtas bara videofilerna, metadatan skrapas inte om.
+
+**Uppdatera siffror senare:** sätt `SKIP_SCRAPED = False` och kör igen. Siffrorna
+uppdateras, men videofiler som redan finns laddas inte ner på nytt.
 
 **2. Ström B – innehållspipeline**
 
