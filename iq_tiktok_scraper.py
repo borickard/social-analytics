@@ -219,7 +219,7 @@ def main():
         )
         page = ctx.pages[0] if ctx.pages else ctx.new_page()
 
-        page.goto(PROFILE_URL, wait_until="networkidle")
+        page.goto(PROFILE_URL, wait_until="domcontentloaded")
         # Ge dig chans att logga in / passera ev. captcha vid första körningen.
         input("Logga in i fönstret om det behövs, tryck sedan ENTER här ...")
 
@@ -231,7 +231,11 @@ def main():
                 continue
             print(f"[{i}/{len(urls)}] {url}")
             try:
-                page.goto(url, wait_until="networkidle")
+                page.goto(url, wait_until="domcontentloaded")
+                # Vänta bara tills JSON-taggen med siffrorna finns – snabbare
+                # och stabilare än att vänta på att hela nätverket blir tyst.
+                page.wait_for_selector(
+                    "#__UNIVERSAL_DATA_FOR_REHYDRATION__", timeout=15000)
                 item = extract_item(page)
                 if not item:
                     print("  ! ingen data hittad – hoppar över")
