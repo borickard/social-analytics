@@ -109,9 +109,11 @@ stickprovsvalidera alkoholflaggorna mot råmaterialet innan analys.
 
 Kategoriska fält (`hook_typ`, `format`, `kategori`, `medverkande`, `har_cta`,
 alkoholflaggorna) har fasta värden och är gjorda för att gruppera/aggregera på i
-analysen. `text_i_bild` sparas som en **JSON-lista** (ett element per textblock)
-så den går att bryta ut exakt med `json.loads(cell)`. Fri text (`tema`,
-`grafik_beskrivning`, `personer_i_bild`, `transkript`) finns kvar som komplement.
+analysen. Flervärdesfält (`text_i_bild`, `cta`, `alkohol_marke`) sparas som
+**JSON-listor** så de går att bryta ut exakt med `json.loads(cell)`, oberoende
+av tecken i texten. (`hashtags` från Ström A är mellanslagsseparerad – redan
+säkert splittbar.) Fri text (`tema`, `grafik_beskrivning`, `personer_i_bild`,
+`transkript`) finns kvar som komplement.
 
 Detektionstaxonomin (alkoholflaggorna) är lätt att utöka: lägg till fält i
 `VISION_SCHEMA` / `VISION_KEYS` i `iq_tiktok_content_pipeline.py`.

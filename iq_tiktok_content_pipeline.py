@@ -119,9 +119,10 @@ VISION_SCHEMA = {
             "description": "Antal synliga medverkande personer (kategori).",
         },
         "cta": {
-            "type": "string",
-            "description": "Uppmaning (call to action) – talad, i bild ELLER länk i caption. "
-                           "Återge den kort, annars tom sträng.",
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "Lista med uppmaningar (call to action) – talade, i bild "
+                           "ELLER länk i caption. Tom lista om ingen finns.",
         },
         "alkohol_i_bild": {
             "type": "string",
@@ -129,8 +130,9 @@ VISION_SCHEMA = {
             "description": "Syns dryck/flaska/glas/burk som är alkohol?",
         },
         "alkohol_marke": {
-            "type": "string",
-            "description": "Identifierbara alkoholvarumärken, annars tom sträng.",
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "Lista med identifierbara alkoholvarumärken, tom lista om inga.",
         },
         "alkohol_kontext": {
             "type": "string",
@@ -153,13 +155,13 @@ VISION_PROMPT = (
     "- Bedöm videoformat och innehållskategori. Klassa hook_typ utifrån de "
     "första sekunderna (tal + första bilden).\n"
     "- medverkande: ingen / en_person / flera_personer.\n"
-    "- CTA: fånga uppmaning oavsett om den är talad, syns i bild eller är en "
-    "länk i captionen (t.ex. en webbadress). Tom sträng om ingen finns.\n"
+    "- CTA (lista): fånga varje uppmaning oavsett om den är talad, syns i bild "
+    "eller är en länk i captionen (t.ex. en webbadress). Tom lista om ingen finns.\n"
     "- Detektionstaxonomi (alkohol): avgör om alkohol SYNS i bild "
-    "(dryck/flaska/glas/burk), identifiera ev. varumärken, och klassa "
+    "(dryck/flaska/glas/burk), lista ev. varumärken, och klassa "
     "sammanhanget. Räkna INTE alkoholfri dryck som alkohol.\n"
-    "- Om något inte går att avgöra: använd tom sträng för fritextfält och "
-    "'ingen'/'nej' för alkoholfälten.\n"
+    "- Om något inte går att avgöra: använd tom sträng för fritextfält, tom "
+    "lista för listfält och 'ingen'/'nej' för alkoholfälten.\n"
     "- Svara endast på svenska i fritextfälten.\n"
 )
 
@@ -313,12 +315,23 @@ def _rate(num, den):
         return ""
 
 
+def _has_content(val):
+    """True om cellen har innehåll – hanterar både JSON-listor (t.ex. "[]") och text."""
+    s = str(val or "").strip()
+    if s.startswith("["):
+        try:
+            return len(json.loads(s)) > 0
+        except Exception:
+            return s not in ("", "[]")
+    return bool(s)
+
+
 def add_derived(row):
     """Härledda nyckeltal ur Ström A-siffrorna + har_cta ur cta-fältet."""
     row["save_rate"] = _rate(row.get("sparade"), row.get("visningar"))
     row["share_rate"] = _rate(row.get("delningar"), row.get("visningar"))
     row["likes_per_view"] = _rate(row.get("likes"), row.get("visningar"))
-    row["har_cta"] = "ja" if (row.get("cta") or "").strip() else "nej"
+    row["har_cta"] = "ja" if _has_content(row.get("cta")) else "nej"
     return row
 
 
