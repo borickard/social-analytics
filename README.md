@@ -20,6 +20,7 @@ Två dataströmmar som joinas på `video_id`:
        │
        ├── iq_tiktok_data/iq_tiktok_metrics.csv   (siffror + caption)
        ├── iq_tiktok_data/videos/<id>.mp4         (för ström B)
+       ├── iq_tiktok_data/thumbnails/<id>.jpg     (för dashboard)
        └── iq_tiktok_data/iq_tiktok_raw.jsonl     (rå fallback)
        │
        ▼

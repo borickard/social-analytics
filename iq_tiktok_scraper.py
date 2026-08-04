@@ -55,6 +55,7 @@ USER_DATA_DIR = os.path.expanduser("~/iq_tiktok_chrome_profil")
 PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
 OUT_DIR = os.path.join(PROJECT_DIR, "iq_tiktok_data")
 VIDEO_DIR = os.path.join(OUT_DIR, "videos")
+THUMB_DIR = os.path.join(OUT_DIR, "thumbnails")
 CSV_PATH = os.path.join(OUT_DIR, "iq_tiktok_metrics.csv")
 RAW_PATH = os.path.join(OUT_DIR, "iq_tiktok_raw.jsonl")
 
@@ -114,6 +115,11 @@ def write_all(rows):
 def video_exists(video_id):
     """Finns videofilen redan nedladdad? (valfri filändelse)"""
     return bool(glob.glob(os.path.join(VIDEO_DIR, f"{video_id}.*")))
+
+
+def thumb_exists(video_id):
+    """Finns thumbnailen redan nedladdad?"""
+    return bool(glob.glob(os.path.join(THUMB_DIR, f"{video_id}.*")))
 
 
 def collect_video_urls(page):
@@ -219,11 +225,22 @@ def parse_row(item):
 
 
 def download_video(url, video_id):
-    # Idempotent: en redan nedladdad video laddas aldrig ner igen.
-    if video_exists(video_id):
+    # Idempotent: hämta bara det som saknas (video och/eller thumbnail).
+    have_video = video_exists(video_id)
+    have_thumb = thumb_exists(video_id)
+    if have_video and have_thumb:
         return "ja (fanns redan)"
-    out = os.path.join(VIDEO_DIR, f"{video_id}.%(ext)s")
-    cmd = ["yt-dlp", "--no-warnings", "-o", out, url]
+    cmd = ["yt-dlp", "--no-warnings"]
+    if have_video:
+        cmd += ["--skip-download"]      # videon finns – hämta bara thumbnailen
+    cmd += [
+        # Thumbnail till egen mapp, alltid som .jpg (kräver ffmpeg) så
+        # filnamnen blir förutsägbara: thumbnails/<id>.jpg (bra för dashboard).
+        "--write-thumbnail", "--convert-thumbnails", "jpg",
+        "-o", os.path.join(VIDEO_DIR, f"{video_id}.%(ext)s"),
+        "-o", f"thumbnail:{os.path.join(THUMB_DIR, video_id)}.%(ext)s",
+        url,
+    ]
     if USE_CHROME_COOKIES:
         cmd += ["--cookies-from-browser", "chrome"]
     try:
@@ -237,6 +254,7 @@ def download_video(url, video_id):
 
 def main():
     os.makedirs(VIDEO_DIR, exist_ok=True)
+    os.makedirs(THUMB_DIR, exist_ok=True)
     rows = load_existing()
     if rows:
         lage = "hoppar över dem" if SKIP_SCRAPED else "uppdaterar deras siffror"
@@ -261,10 +279,10 @@ def main():
 
             # Återupptagningsläge: metadatan finns redan.
             if SKIP_SCRAPED and vid in rows:
-                # Ladda ändå ner videon om den saknas (t.ex. steg 2 efter att
-                # steg 1 hämtat bara siffror). Finns den redan görs inget.
-                if DOWNLOAD_VIDEOS and not video_exists(vid):
-                    print(f"[{i}/{len(urls)}] {vid} – metadata finns, laddar ner video")
+                # Ladda ändå ner video/thumbnail om något saknas (t.ex. steg 2
+                # efter att steg 1 hämtat bara siffror). Finns allt görs inget.
+                if DOWNLOAD_VIDEOS and not (video_exists(vid) and thumb_exists(vid)):
+                    print(f"[{i}/{len(urls)}] {vid} – metadata finns, hämtar video/thumbnail")
                     rows[vid]["nedladdad"] = download_video(url, vid)
                     write_all(rows)
                 else:
