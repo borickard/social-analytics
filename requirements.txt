@@ -1,0 +1,11 @@
+# Ström A – scraper
+playwright>=1.40
+yt-dlp>=2024.1.0
+
+# Ström B – innehållspipeline
+faster-whisper>=1.0
+anthropic>=0.69
+
+# Systemberoenden (installeras separat, ej via pip):
+#   - Chromium för Playwright:  playwright install chromium
+#   - ffmpeg + ffprobe i PATH:  t.ex. brew install ffmpeg / apt install ffmpeg

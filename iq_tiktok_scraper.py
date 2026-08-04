@@ -1,0 +1,229 @@
+#!/usr/bin/env python3
+"""
+IQ TikTok-scraper  –  Ström A (resultatdata) + nedladdning av videofiler.
+
+Vad skriptet gör
+----------------
+1. Öppnar er profil i din INLOGGADE Chrome-profil (mindre bot-skydd, ingen headless).
+2. Scrollar profilen tills alla klipp laddats och samlar in video-URL:erna.
+3. För varje video läser den siffror + caption ur sidans inbäddade JSON
+   (#__UNIVERSAL_DATA_FOR_REHYDRATION__) – ingen OCR, inga skärmdumpar.
+4. Laddar ner själva videofilen med yt-dlp (för innehållsanalysen sen).
+5. Skriver en CSV (en rad per video) + en rå JSONL som säkerhetskopia.
+
+RÄCKVIDD (reach) ingår INTE med flit – det kräver TikTok Studio och är den
+enda knöliga biten. Vi utgår från visningar (playCount). Reach kan joinas in
+på video-id senare via en manuell CSV-export.
+
+Körning är återupptagbar: redan hämtade videor hoppas över, så du kan avbryta
+och köra igen.
+
+Förberedelser (engångs)
+-----------------------
+    pip install playwright
+    playwright install chromium
+    # yt-dlp: pip install yt-dlp   (eller: brew install yt-dlp)
+
+Ställ in USER_DATA_DIR nedan till en egen mapp. Första gången skriptet kör
+öppnas ett Chrome-fönster – logga in på TikTok där om du inte redan är det,
+och låt det stå kvar. Nästa körning minns inloggningen.
+
+Kör:
+    python iq_tiktok_scraper.py
+"""
+
+import csv
+import json
+import os
+import random
+import re
+import subprocess
+import sys
+import time
+
+from playwright.sync_api import sync_playwright
+
+# ------------------------------------------------------------------ CONFIG ---
+PROFILE_URL = "https://www.tiktok.com/@iqinitiativet"
+
+# En egen mapp för Chrome-profilen som skriptet använder (håller inloggningen).
+USER_DATA_DIR = os.path.expanduser("~/iq_tiktok_chrome_profil")
+
+OUT_DIR = os.path.expanduser("~/iq_tiktok_data")
+VIDEO_DIR = os.path.join(OUT_DIR, "videos")
+CSV_PATH = os.path.join(OUT_DIR, "iq_tiktok_metrics.csv")
+RAW_PATH = os.path.join(OUT_DIR, "iq_tiktok_raw.jsonl")
+
+DOWNLOAD_VIDEOS = True          # sätt False om du bara vill ha siffrorna först
+USE_CHROME_COOKIES = True       # låter yt-dlp använda din Chrome-inloggning
+
+# Snäll, mänsklig takt – minskar risk för strypning. Öka vid problem.
+MIN_DELAY, MAX_DELAY = 2.5, 5.0
+
+CSV_FIELDS = [
+    "video_id", "url", "publiceringsdatum", "langd_sek",
+    "visningar", "likes", "kommentarer", "delningar", "sparade",
+    "engagement_rate",
+    "caption", "caption_langd", "antal_hashtags", "hashtags",
+    "musik", "nedladdad",
+]
+# -----------------------------------------------------------------------------
+
+
+def sleep_a_bit():
+    time.sleep(random.uniform(MIN_DELAY, MAX_DELAY))
+
+
+def already_done():
+    """Video-id:n som redan finns i CSV:n, för återupptagning."""
+    done = set()
+    if os.path.exists(CSV_PATH):
+        with open(CSV_PATH, newline="", encoding="utf-8") as f:
+            for row in csv.DictReader(f):
+                done.add(row["video_id"])
+    return done
+
+
+def collect_video_urls(page):
+    """Scrolla profilen tills antalet länkar slutar växa; returnera URL:erna."""
+    print("Scrollar profilen för att ladda alla klipp ...")
+    seen, stagnant = set(), 0
+    while stagnant < 4:
+        hrefs = page.eval_on_selector_all(
+            'a[href*="/video/"]', "els => els.map(e => e.href)")
+        before = len(seen)
+        seen.update(h.split("?")[0] for h in hrefs if "/video/" in h)
+        if len(seen) == before:
+            stagnant += 1
+        else:
+            stagnant = 0
+        page.mouse.wheel(0, 4000)
+        time.sleep(random.uniform(1.5, 3.0))
+    print(f"Hittade {len(seen)} videor.")
+    return sorted(seen)
+
+
+def dig(d, *path, default=None):
+    """Säker nästlad uppslagning i dict:ar."""
+    for k in path:
+        if not isinstance(d, dict) or k not in d:
+            return default
+        d = d[k]
+    return d
+
+
+def extract_item(page):
+    """Plocka ut itemStruct ur den inbäddade rehydration-JSON:en."""
+    raw = page.eval_on_selector(
+        "#__UNIVERSAL_DATA_FOR_REHYDRATION__", "el => el.textContent")
+    data = json.loads(raw)
+    scope = data.get("__DEFAULT_SCOPE__", {})
+    item = dig(scope, "webapp.video-detail", "itemInfo", "itemStruct", default={})
+    return item
+
+
+def parse_row(item):
+    stats = item.get("stats", {}) or item.get("statsV2", {})
+    desc = item.get("desc", "") or ""
+    hashtags = re.findall(r"#(\w+)", desc)
+    views = int(stats.get("playCount", 0) or 0)
+    likes = int(stats.get("diggCount", 0) or 0)
+    comments = int(stats.get("commentCount", 0) or 0)
+    shares = int(stats.get("shareCount", 0) or 0)
+    saves = int(stats.get("collectCount", 0) or 0)
+    eng = round((likes + comments + shares + saves) / views, 4) if views else ""
+    created = item.get("createTime")
+    date = ""
+    if created:
+        date = time.strftime("%Y-%m-%d", time.gmtime(int(created)))
+    return {
+        "video_id": item.get("id", ""),
+        "url": f"{PROFILE_URL}/video/{item.get('id','')}",
+        "publiceringsdatum": date,
+        "langd_sek": dig(item, "video", "duration", default=""),
+        "visningar": views,
+        "likes": likes,
+        "kommentarer": comments,
+        "delningar": shares,
+        "sparade": saves,
+        "engagement_rate": eng,
+        "caption": desc,
+        "caption_langd": len(desc),
+        "antal_hashtags": len(hashtags),
+        "hashtags": " ".join(hashtags),
+        "musik": dig(item, "music", "title", default=""),
+        "nedladdad": "",
+    }
+
+
+def download_video(url, video_id):
+    out = os.path.join(VIDEO_DIR, f"{video_id}.%(ext)s")
+    cmd = ["yt-dlp", "--no-warnings", "-o", out, url]
+    if USE_CHROME_COOKIES:
+        cmd += ["--cookies-from-browser", "chrome"]
+    try:
+        subprocess.run(cmd, check=True,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        return "ja"
+    except Exception as e:
+        print(f"  ! nedladdning misslyckades ({video_id}): {e}")
+        return "nej"
+
+
+def append_csv(row):
+    new = not os.path.exists(CSV_PATH)
+    with open(CSV_PATH, "a", newline="", encoding="utf-8") as f:
+        w = csv.DictWriter(f, fieldnames=CSV_FIELDS)
+        if new:
+            w.writeheader()
+        w.writerow(row)
+
+
+def main():
+    os.makedirs(VIDEO_DIR, exist_ok=True)
+    done = already_done()
+    if done:
+        print(f"Återupptar – {len(done)} videor redan klara, hoppar över dem.")
+
+    with sync_playwright() as p:
+        ctx = p.chromium.launch_persistent_context(
+            USER_DATA_DIR,
+            headless=False,
+            args=["--disable-blink-features=AutomationControlled"],
+        )
+        page = ctx.pages[0] if ctx.pages else ctx.new_page()
+
+        page.goto(PROFILE_URL, wait_until="networkidle")
+        # Ge dig chans att logga in / passera ev. captcha vid första körningen.
+        input("Logga in i fönstret om det behövs, tryck sedan ENTER här ...")
+
+        urls = collect_video_urls(page)
+
+        for i, url in enumerate(urls, 1):
+            vid = url.rstrip("/").split("/")[-1]
+            if vid in done:
+                continue
+            print(f"[{i}/{len(urls)}] {url}")
+            try:
+                page.goto(url, wait_until="networkidle")
+                item = extract_item(page)
+                if not item:
+                    print("  ! ingen data hittad – hoppar över")
+                    continue
+                with open(RAW_PATH, "a", encoding="utf-8") as f:
+                    f.write(json.dumps(item, ensure_ascii=False) + "\n")
+                row = parse_row(item)
+                if DOWNLOAD_VIDEOS:
+                    row["nedladdad"] = download_video(url, row["video_id"])
+                append_csv(row)
+            except Exception as e:
+                print(f"  ! fel på {url}: {e}")
+            sleep_a_bit()
+
+        ctx.close()
+
+    print(f"\nKlart. CSV: {CSV_PATH}\nVideor: {VIDEO_DIR}")
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+
+# Lokala data- och mediautdata (ligger normalt under ~/iq_tiktok_data)
+iq_tiktok_data/
+iq_tiktok_chrome_profil/
+videos/
+frames/
+*.mp4
+*.jsonl
+iq_tiktok_metrics.csv
+iq_tiktok_enriched.csv
+
+# Hemligheter
+.env
