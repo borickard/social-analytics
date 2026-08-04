@@ -33,6 +33,13 @@ OUT_CSV = os.path.join(DATA, "iq_tiktok_enriched.csv")
 # Vision-modell. claude-opus-5 = bäst kvalitet; claude-sonnet-5 = billigare.
 VISION_MODEL = os.environ.get("IQ_VISION_MODEL", "claude-opus-5")
 
+# Whisper-modell för transkribering. large-v3 = bäst men långsam på CPU (Mac).
+# Sätt t.ex. IQ_WHISPER_MODEL=medium eller small för snabbare körning.
+WHISPER_MODEL = os.environ.get("IQ_WHISPER_MODEL", "large-v3")
+
+# Testläge: analysera bara de N första (0 = alla). T.ex. IQ_LIMIT=3 för ett test.
+LIMIT = int(os.environ.get("IQ_LIMIT", "0") or 0)
+
 # Verbala alkohol-nyckelord (korsas mot transkriptet i main()).
 ALKOHOL_ORD = ["alkohol", "öl", "vin", "sprit", "drink", "bärs", "cider",
                "champagne", "bubbel", "shot", "systembolag", "fylla", "berusad"]
@@ -143,14 +150,33 @@ def extract_keyframes(path, outdir):
     return frames[:12]
 
 
+_WHISPER = None
+
+
+def get_whisper():
+    """Ladda Whisper-modellen EN gång (inte per video) och återanvänd den."""
+    global _WHISPER
+    if _WHISPER is None:
+        from faster_whisper import WhisperModel
+        print(f"Laddar Whisper-modell '{WHISPER_MODEL}' "
+              "(första gången laddas den ner – kan ta ett tag)...")
+        _WHISPER = WhisperModel(WHISPER_MODEL, device="auto", compute_type="int8")
+    return _WHISPER
+
+
 def transcribe(path):
-    from faster_whisper import WhisperModel
-    model = WhisperModel("large-v3", device="auto", compute_type="int8")
+    model = get_whisper()
     segments, _ = model.transcribe(path, language="sv")
     segs = list(segments)
     full = " ".join(s.text.strip() for s in segs)
     hook = " ".join(s.text.strip() for s in segs if s.start < 3.0)
     return full, hook
+
+
+def find_video(video_id):
+    """Hitta videofilen oavsett filändelse (.mp4/.webm ...)."""
+    hits = glob.glob(os.path.join(VIDEO_DIR, f"{video_id}.*"))
+    return hits[0] if hits else None
 
 
 def call_vision(frames, transcript):
@@ -204,6 +230,27 @@ def call_vision(frames, transcript):
         return empty
 
 
+def load_enriched():
+    """Läs befintlig enriched-CSV till {video_id: rad} – för återupptagning."""
+    rows = {}
+    if os.path.exists(OUT_CSV):
+        with open(OUT_CSV, newline="", encoding="utf-8") as f:
+            for r in csv.DictReader(f):
+                rows[r["video_id"]] = r
+    return rows
+
+
+def write_all(rows, out_fields):
+    """Skriv hela enriched-CSV:n atomiskt – ett avbrott lämnar inte en trasig fil."""
+    tmp = OUT_CSV + ".tmp"
+    with open(tmp, "w", newline="", encoding="utf-8") as f:
+        w = csv.DictWriter(f, fieldnames=out_fields, extrasaction="ignore")
+        w.writeheader()
+        for r in rows.values():
+            w.writerow(r)
+    os.replace(tmp, OUT_CSV)
+
+
 def main():
     if not os.path.exists(IN_CSV):
         sys.exit(f"Hittar inte {IN_CSV} – kör iq_tiktok_scraper.py först.")
@@ -212,17 +259,27 @@ def main():
     if not rows_a:
         sys.exit(f"{IN_CSV} är tom.")
     out_fields = list(rows_a[0].keys()) + CONTENT_FIELDS
-    with open(OUT_CSV, "w", newline="", encoding="utf-8") as f:
-        w = csv.DictWriter(f, fieldnames=out_fields)
-        w.writeheader()
-        for i, row in enumerate(rows_a, 1):
-            vid = row["video_id"]
-            mp4 = os.path.join(VIDEO_DIR, f"{vid}.mp4")
-            print(f"[{i}/{len(rows_a)}] {vid}")
-            if not os.path.exists(mp4):
-                print("  ! ingen videofil – skriver bara ström A-raden")
-                w.writerow(row)
-                continue
+
+    enriched = load_enriched()
+    done = sum(1 for r in enriched.values() if r.get("langd_verifierad"))
+    if done:
+        print(f"Återupptar – {done} videor redan analyserade, hoppar över dem.")
+
+    todo = rows_a[:LIMIT] if LIMIT else rows_a
+    for i, row in enumerate(todo, 1):
+        vid = row["video_id"]
+        # Hoppa över redan analyserade (langd_verifierad satt = klar).
+        if enriched.get(vid, {}).get("langd_verifierad"):
+            print(f"[{i}/{len(todo)}] {vid} – redan analyserad, hoppar över")
+            continue
+        print(f"[{i}/{len(todo)}] {vid}")
+        mp4 = find_video(vid)
+        if not mp4:
+            print("  ! ingen videofil – skriver bara ström A-raden")
+            enriched[vid] = row
+            write_all(enriched, out_fields)
+            continue
+        try:
             meta = ffprobe(mp4)
             transcript, hook = transcribe(mp4)
             with tempfile.TemporaryDirectory() as tmp:
@@ -236,7 +293,10 @@ def main():
                 else "nej")
             for k in VISION_KEYS:
                 row[k] = vision.get(k, "")
-            w.writerow(row)
+            enriched[vid] = row
+            write_all(enriched, out_fields)   # spara progress efter varje video
+        except Exception as e:
+            print(f"  ! fel på {vid}: {e}")
     print("Klart:", OUT_CSV)
 
 
