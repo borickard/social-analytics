@@ -269,8 +269,11 @@ def main():
                 page.goto(url, wait_until="domcontentloaded")
                 # Vänta bara tills JSON-taggen med siffrorna finns – snabbare
                 # och stabilare än att vänta på att hela nätverket blir tyst.
+                # state="attached": <script>-taggen finns i DOM men ritas
+                # aldrig ut, så vi får INTE vänta på att den blir "synlig".
                 page.wait_for_selector(
-                    "#__UNIVERSAL_DATA_FOR_REHYDRATION__", timeout=15000)
+                    "#__UNIVERSAL_DATA_FOR_REHYDRATION__",
+                    state="attached", timeout=15000)
                 item = extract_item(page)
                 if not item:
                     print("  ! ingen data hittad – hoppar över")
