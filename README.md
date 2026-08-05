@@ -96,6 +96,19 @@ Läser `iq_tiktok_metrics.csv` + `videos/<id>.mp4` och skriver
 `iq_tiktok_enriched.csv`. Verifiera vision-utdatan på ett par videor och
 stickprovsvalidera alkoholflaggorna mot råmaterialet innan analys.
 
+**Reach (räckvidd) i efterhand.** Reach finns bara i TikTok Studio (och bara
+från 2024-08-05). Exportera reach därifrån, spara som CSV (t.ex.
+`iq_tiktok_data/reach.csv`) och joina in den i `rackvidd`-kolumnen:
+
+```bash
+python join_reach.py                 # använder iq_tiktok_data/reach.csv
+python join_reach.py min_reach.csv   # eller ange filen
+```
+
+Skriptet känner igen video-id/URL- och reach-kolumnerna automatiskt, matchar på
+`video_id` och lämnar videor utan reach-data tomma. Kör det *efter* att hela
+Ström B-körningen är klar.
+
 ## Kalkylark-schema (berikad CSV)
 
 | Grupp | Kolumner |
