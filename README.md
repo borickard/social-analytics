@@ -96,19 +96,23 @@ Läser `iq_tiktok_metrics.csv` + `videos/<id>.mp4` och skriver
 `iq_tiktok_enriched.csv`. Verifiera vision-utdatan på ett par videor och
 stickprovsvalidera alkoholflaggorna mot råmaterialet innan analys.
 
-**Reach (räckvidd) i efterhand.** Reach finns bara i TikTok Studio (och bara
-från 2024-08-05). Exportera reach därifrån, spara som CSV (t.ex.
-`iq_tiktok_data/reach.csv`) och joina in den i `rackvidd`-kolumnen:
+**Exakta siffror + reach från TikTok Business Manager / Studio.** De skrapade
+publika siffrorna är avrundade; en Studio-/Business Manager-export har exakta
+tal. Exportera den, spara som CSV (t.ex. `iq_tiktok_data/studio_export.csv`) och
+joina in de exakta värdena på `video_id`:
 
 ```bash
-python join_reach.py                 # använder iq_tiktok_data/reach.csv
-python join_reach.py min_reach.csv   # eller ange filen
+python join_studio.py                    # använder iq_tiktok_data/studio_export.csv
+python join_studio.py min_export.csv     # eller ange filen
 ```
 
-Skriptet känner igen video-id/URL- och reach-kolumnerna automatiskt, matchar på
-`video_id`, fyller i **både** metrics- och enriched-CSV:n (och lägger till
-kolumnen om den saknas) och lämnar videor utan reach-data tomma. Det kan köras
-när som helst – reach är ett resultatmått i Ström A och följer med in i enriched.
+Skriptet känner igen kolumnerna automatiskt (video-id/URL + siffror), klarar
+komma/semikolon/tab och ev. titelrad, och **lägger till** exakta kolumner
+bredvid de skrapade (skriver inte över):
+`visningar_exakt`, `likes_exakt`, `kommentarer_exakt`, `delningar_exakt`,
+`sparade_exakt`. Innehåller exporten även en reach-kolumn fylls `rackvidd`.
+Fyller både metrics- och enriched-CSV:n; videor som saknas i exporten (t.ex.
+före 2024-08-05 för reach) lämnas tomma. Kan köras när som helst.
 
 ## Kalkylark-schema (berikad CSV)
 
