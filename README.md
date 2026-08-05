@@ -109,11 +109,13 @@ Läser `iq_tiktok_metrics.csv` + `videos/<id>.mp4` (och foto-/karusellinläggens
 ett par inlägg och stickprovsvalidera alkoholflaggorna mot råmaterialet innan analys.
 
 **Återupptagbart & feltåligt.** Progress sparas efter varje inlägg. Vid
-tillfälliga API-fel (t.ex. `529 Overloaded`) görs flera försök med växande
-väntetid (`IQ_VISION_RETRIES`, default 6). Lyckas det ändå inte markeras raden
-**inte** som klar – kör bara skriptet igen senare så tas de kvarvarande
-inläggen om (redan analyserade hoppas över). En rad räknas som klar först när
-vision faktiskt gav ett resultat (`format` är satt).
+tillfälliga API-fel (t.ex. `529 Overloaded`) OCH dåliga svar (trunkerat/tomt
+JSON) görs flera försök med växande väntetid (`IQ_VISION_RETRIES`, default 6).
+`max_tokens` för svaret är 4096 (`IQ_VISION_MAX_TOKENS`) så text-tunga karuseller
+inte klipps av. Lyckas det ändå inte markeras raden **inte** som klar – kör bara
+skriptet igen senare så tas de kvarvarande inläggen om (redan analyserade hoppas
+över). En rad räknas som klar först när vision faktiskt gav ett resultat
+(`format` är satt).
 
 **Exakta siffror + reach från TikTok Business Manager / Studio.** De skrapade
 publika siffrorna är avrundade; en Studio-/Business Manager-export har exakta

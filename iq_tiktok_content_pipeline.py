@@ -58,6 +58,11 @@ ONLY_PHOTOS = os.environ.get("IQ_ONLY_PHOTOS", "").strip().lower() not in ("", "
 # Antal försök för vision-anropet vid övergående fel (överbelastning/timeout).
 VISION_MAX_RETRIES = int(os.environ.get("IQ_VISION_RETRIES", "6") or 6)
 
+# Max utdata-tokens för vision-svaret. Höjt från 2000 så text-tunga karuseller
+# (mycket OCR i text_i_bild) inte klipps av mitt i JSON:en. Kostar bara för de
+# tokens som faktiskt genereras. Justerbart via IQ_VISION_MAX_TOKENS.
+VISION_MAX_TOKENS = int(os.environ.get("IQ_VISION_MAX_TOKENS", "4096") or 4096)
+
 # Säkring: avbryt hela körningen om så här många inlägg i rad misslyckas (tyder
 # på en pågående API-outage). Slösar då inte Whisper-tid på resten – kör igen
 # senare, redan klara hoppas över. 0 = stäng av säkringen.
@@ -319,43 +324,44 @@ def call_vision(frames, transcript, caption="", is_photo=False):
     content.append({"type": "text", "text": tail})
 
     client = anthropic.Anthropic()
-    response = None
+    # Hela försöket (anrop + parsning) ligger i loopen: både övergående API-fel
+    # (529 Overloaded) OCH dåliga svar (trunkerat/tomt/ogiltigt JSON) räknas som
+    # ett misslyckat försök och görs om. Först när försöken tar slut kastas felet
+    # vidare, så raden INTE sparas som analyserad (utan tas om nästa körning).
     for attempt in range(1, VISION_MAX_RETRIES + 1):
         try:
             response = client.messages.create(
                 model=VISION_MODEL,
-                max_tokens=2000,
+                max_tokens=VISION_MAX_TOKENS,
                 messages=[{"role": "user", "content": content}],
                 output_config={"format": {"type": "json_schema", "schema": VISION_SCHEMA}},
             )
-            break
+            # Med structured outputs ligger giltig JSON i första text-blocket.
+            text = next((b.text for b in response.content if b.type == "text"), None)
+            if not text:
+                raise RuntimeError("vision: inget text-svar")
+            data = json.loads(text)   # JSONDecodeError vid trunkerat svar
+            # Räkna tokens först vid lyckat svar (kostnadsuppskattning).
+            USAGE["in"] += getattr(response.usage, "input_tokens", 0) or 0
+            USAGE["out"] += getattr(response.usage, "output_tokens", 0) or 0
+            # Se till att alla nycklar finns. List-fält (t.ex. text_i_bild) sparas
+            # som JSON-sträng i cellen så de går att bryta ut exakt senare med
+            # json.loads – oberoende av vilka tecken texten själv innehåller.
+            out = {}
+            for k in VISION_KEYS:
+                v = data.get(k, empty[k])
+                out[k] = json.dumps(v, ensure_ascii=False) if isinstance(v, list) else v
+            return out
         except Exception as e:
-            # Övergående fel (t.ex. 529 Overloaded): vänta och försök igen.
-            if attempt < VISION_MAX_RETRIES and _is_transient(e):
+            # Retry vid övergående API-fel ELLER dåligt/ofullständigt svar.
+            retryable = _is_transient(e) or isinstance(e, (json.JSONDecodeError, RuntimeError))
+            if attempt < VISION_MAX_RETRIES and retryable:
                 wait = min(2 ** attempt, 30) + random.uniform(0, 1.5)
-                print(f"  … vision överbelastad/instabil (försök {attempt}/"
-                      f"{VISION_MAX_RETRIES}), väntar {wait:.0f}s: {e}")
+                print(f"  … vision instabil (försök {attempt}/{VISION_MAX_RETRIES}), "
+                      f"väntar {wait:.0f}s: {e}")
                 time.sleep(wait)
                 continue
-            # Slut på försök, eller icke-övergående fel: kasta vidare så raden
-            # INTE sparas som analyserad (den tas om vid nästa körning).
             raise
-    # Räkna tokens för den löpande kostnadsuppskattningen.
-    USAGE["in"] += getattr(response.usage, "input_tokens", 0) or 0
-    USAGE["out"] += getattr(response.usage, "output_tokens", 0) or 0
-    # Med structured outputs ligger giltig JSON i första text-blocket.
-    text = next((b.text for b in response.content if b.type == "text"), None)
-    if not text:
-        raise RuntimeError("vision: inget text-svar")
-    data = json.loads(text)
-    # Se till att alla nycklar finns. List-fält (t.ex. text_i_bild) sparas
-    # som JSON-sträng i cellen så de går att bryta ut exakt senare med
-    # json.loads – oberoende av vilka tecken texten själv innehåller.
-    out = {}
-    for k in VISION_KEYS:
-        v = data.get(k, empty[k])
-        out[k] = json.dumps(v, ensure_ascii=False) if isinstance(v, list) else v
-    return out
 
 
 def load_enriched():
