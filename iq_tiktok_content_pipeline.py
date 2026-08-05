@@ -25,9 +25,11 @@ import csv
 import glob
 import json
 import os
+import random
 import subprocess
 import sys
 import tempfile
+import time
 
 # Samma datamapp som scrapern skriver till: en undermapp i projektet.
 PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -48,6 +50,9 @@ WHISPER_MODEL = os.environ.get("IQ_WHISPER_MODEL", "large-v3")
 
 # Testläge: analysera bara de N första (0 = alla). T.ex. IQ_LIMIT=3 för ett test.
 LIMIT = int(os.environ.get("IQ_LIMIT", "0") or 0)
+
+# Antal försök för vision-anropet vid övergående fel (överbelastning/timeout).
+VISION_MAX_RETRIES = int(os.environ.get("IQ_VISION_RETRIES", "6") or 6)
 
 # Ungefärligt pris (USD per miljon tokens) för den löpande kostnadsräknaren.
 # Uppskattning – Sonnet 5 har intropris (~$2/$10) t.o.m. 2026-08-31.
@@ -260,13 +265,26 @@ def find_images(video_id):
                   + glob.glob(os.path.join(d, "*.jpeg")))
 
 
+def _is_transient(e):
+    """Övergående fel som är värt att försöka igen (överbelastning/timeout/nät)."""
+    code = getattr(e, "status_code", None)
+    if code in (408, 409, 425, 429, 500, 502, 503, 529):
+        return True
+    s = str(e).lower()
+    return any(m in s for m in (
+        "overloaded", "rate limit", "rate_limit", "timeout", "timed out",
+        "connection", "temporarily", "429", "500", "502", "503", "529"))
+
+
 def call_vision(frames, transcript, caption="", is_photo=False):
     """
     Skicka nyckelbilderna + transkriptet + captionen till Claude och be om JSON
     enligt VISION_SCHEMA. Returnerar ett dict med nycklarna i VISION_KEYS.
 
-    Robust: vid fel loggas det och tomma värden returneras så att pipelinen
-    kan fortsätta (rådata finns kvar i CSV:n som ström A skrev).
+    Vid övergående fel (t.ex. 529 Overloaded) görs flera försök med växande
+    väntetid. Om det ändå misslyckas KASTAS felet vidare – då skrivs INTE raden
+    som analyserad, utan tas om automatiskt vid nästa körning (i stället för att
+    tyst sparas med tomma värden och hoppas över för alltid).
     """
     empty = {k: ("nej" if k == "alkohol_i_bild"
                  else "ingen" if k == "alkohol_kontext"
@@ -292,33 +310,43 @@ def call_vision(frames, transcript, caption="", is_photo=False):
     content.append({"type": "text", "text": tail})
 
     client = anthropic.Anthropic()
-    try:
-        response = client.messages.create(
-            model=VISION_MODEL,
-            max_tokens=2000,
-            messages=[{"role": "user", "content": content}],
-            output_config={"format": {"type": "json_schema", "schema": VISION_SCHEMA}},
-        )
-        # Räkna tokens för den löpande kostnadsuppskattningen.
-        USAGE["in"] += getattr(response.usage, "input_tokens", 0) or 0
-        USAGE["out"] += getattr(response.usage, "output_tokens", 0) or 0
-        # Med structured outputs ligger giltig JSON i första text-blocket.
-        text = next((b.text for b in response.content if b.type == "text"), None)
-        if not text:
-            print("  ! vision: inget text-svar")
-            return empty
-        data = json.loads(text)
-        # Se till att alla nycklar finns. List-fält (t.ex. text_i_bild) sparas
-        # som JSON-sträng i cellen så de går att bryta ut exakt senare med
-        # json.loads – oberoende av vilka tecken texten själv innehåller.
-        out = {}
-        for k in VISION_KEYS:
-            v = data.get(k, empty[k])
-            out[k] = json.dumps(v, ensure_ascii=False) if isinstance(v, list) else v
-        return out
-    except Exception as e:
-        print(f"  ! vision misslyckades: {e}")
-        return empty
+    response = None
+    for attempt in range(1, VISION_MAX_RETRIES + 1):
+        try:
+            response = client.messages.create(
+                model=VISION_MODEL,
+                max_tokens=2000,
+                messages=[{"role": "user", "content": content}],
+                output_config={"format": {"type": "json_schema", "schema": VISION_SCHEMA}},
+            )
+            break
+        except Exception as e:
+            # Övergående fel (t.ex. 529 Overloaded): vänta och försök igen.
+            if attempt < VISION_MAX_RETRIES and _is_transient(e):
+                wait = min(2 ** attempt, 30) + random.uniform(0, 1.5)
+                print(f"  … vision överbelastad/instabil (försök {attempt}/"
+                      f"{VISION_MAX_RETRIES}), väntar {wait:.0f}s: {e}")
+                time.sleep(wait)
+                continue
+            # Slut på försök, eller icke-övergående fel: kasta vidare så raden
+            # INTE sparas som analyserad (den tas om vid nästa körning).
+            raise
+    # Räkna tokens för den löpande kostnadsuppskattningen.
+    USAGE["in"] += getattr(response.usage, "input_tokens", 0) or 0
+    USAGE["out"] += getattr(response.usage, "output_tokens", 0) or 0
+    # Med structured outputs ligger giltig JSON i första text-blocket.
+    text = next((b.text for b in response.content if b.type == "text"), None)
+    if not text:
+        raise RuntimeError("vision: inget text-svar")
+    data = json.loads(text)
+    # Se till att alla nycklar finns. List-fält (t.ex. text_i_bild) sparas
+    # som JSON-sträng i cellen så de går att bryta ut exakt senare med
+    # json.loads – oberoende av vilka tecken texten själv innehåller.
+    out = {}
+    for k in VISION_KEYS:
+        v = data.get(k, empty[k])
+        out[k] = json.dumps(v, ensure_ascii=False) if isinstance(v, list) else v
+    return out
 
 
 def load_enriched():
@@ -363,11 +391,13 @@ def _has_content(val):
 
 
 def is_analyzed(row):
-    """Har raden redan analyserats i Ström B?
+    """Har raden redan analyserats KLART i Ström B?
 
-    En analyserad video har verifierad längd; ett analyserat bildinlägg har
-    ingen längd men en upplösning. Skelettrader (utan media) har varken."""
-    return bool(row.get("langd_verifierad") or row.get("upplosning"))
+    Kräver att vision faktiskt gav ett resultat (fältet 'format' är satt). Rader
+    där vision misslyckades – t.ex. under ett tillfälligt API-fel – saknar
+    'format' och tas därför om vid nästa körning i stället för att hoppas över
+    för alltid med tomma innehållsfält."""
+    return bool(row.get("format"))
 
 
 def add_derived(row):

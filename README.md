@@ -101,9 +101,16 @@ python iq_tiktok_content_pipeline.py
 IQ_VISION_MODEL=claude-sonnet-5 python iq_tiktok_content_pipeline.py
 ```
 
-Läser `iq_tiktok_metrics.csv` + `videos/<id>.mp4` och skriver
-`iq_tiktok_enriched.csv`. Verifiera vision-utdatan på ett par videor och
-stickprovsvalidera alkoholflaggorna mot råmaterialet innan analys.
+Läser `iq_tiktok_metrics.csv` + `videos/<id>.mp4` (och foto-/karusellinläggens
+`images/<id>/`) och skriver `iq_tiktok_enriched.csv`. Verifiera vision-utdatan på
+ett par inlägg och stickprovsvalidera alkoholflaggorna mot råmaterialet innan analys.
+
+**Återupptagbart & feltåligt.** Progress sparas efter varje inlägg. Vid
+tillfälliga API-fel (t.ex. `529 Overloaded`) görs flera försök med växande
+väntetid (`IQ_VISION_RETRIES`, default 6). Lyckas det ändå inte markeras raden
+**inte** som klar – kör bara skriptet igen senare så tas de kvarvarande
+inläggen om (redan analyserade hoppas över). En rad räknas som klar först när
+vision faktiskt gav ett resultat (`format` är satt).
 
 **Exakta siffror + reach från TikTok Business Manager / Studio.** De skrapade
 publika siffrorna är avrundade; en Studio-/Business Manager-export har exakta
