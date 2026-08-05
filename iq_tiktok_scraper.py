@@ -71,6 +71,11 @@ RAW_PATH = os.path.join(OUT_DIR, "iq_tiktok_raw.jsonl")
 DOWNLOAD_VIDEOS = True          # ladda ner mediet (videofiler + karusellbilder)
 USE_CHROME_COOKIES = True       # låter yt-dlp använda din Chrome-inloggning
 
+# Bearbeta BARA foto-/karusellinlägg (hoppa över alla videor). Bra för att
+# komplettera datasetet med fotona utan att röra de redan skrapade videorna
+# eller dra igång stora videonedladdningar. Sätt False för en vanlig körning.
+ONLY_PHOTOS = True
+
 # Återupptagning:
 #   True  = hoppa över videor som redan har metadata (ladda ändå ner ev.
 #           saknade videofiler). Bra för att fortsätta en avbruten körning
@@ -249,6 +254,27 @@ def is_photo_item(item):
     return bool(dig(item, "imagePost"))
 
 
+def fetch_photo_item(page, url, vid):
+    """Hämta itemStruct för ett foto-/karusellinlägg.
+
+    Foto-detaljsidor SSR:ar INTE in datan i #__UNIVERSAL_DATA_FOR_REHYDRATION__
+    (till skillnad från videor). I stället anropar sidan själv
+    /api/item/detail/ – vi fångar det svaret. Formatet är identiskt med
+    videornas (itemInfo.itemStruct), så parse_row/image_urls funkar oförändrat.
+
+    Returnerar itemStruct (dict) eller {} om svaret uteblir/inte kan läsas."""
+    try:
+        with page.expect_response(
+                lambda r: "/api/item/detail/" in r.url,
+                timeout=20000) as info:
+            page.goto(url, wait_until="domcontentloaded")
+        data = info.value.json()
+        return dig(data, "itemInfo", "itemStruct", default={}) or {}
+    except Exception as e:
+        print(f"  ! kunde inte hämta foto-API ({vid}): {e}")
+        return {}
+
+
 def parse_row(item):
     stats = item.get("stats", {}) or item.get("statsV2", {})
     desc = item.get("desc", "") or ""
@@ -393,6 +419,9 @@ def main():
         input("Logga in i fönstret om det behövs, tryck sedan ENTER här ...")
 
         urls = collect_post_urls(page)
+        if ONLY_PHOTOS:
+            urls = [u for u in urls if "/photo/" in u]
+            print(f"ONLY_PHOTOS: bearbetar bara {len(urls)} foto-/karusellinlägg.")
 
         for i, url in enumerate(urls, 1):
             vid = url.rstrip("/").split("/")[-1]
@@ -408,12 +437,8 @@ def main():
                 if DOWNLOAD_VIDEOS and not have_media:
                     print(f"[{i}/{len(urls)}] {vid} – metadata finns, hämtar media/thumbnail")
                     if is_photo:
-                        # Bild-URL:erna sitter i sidans JSON – ladda sidan igen.
-                        page.goto(url, wait_until="domcontentloaded")
-                        page.wait_for_selector(
-                            "#__UNIVERSAL_DATA_FOR_REHYDRATION__",
-                            state="attached", timeout=15000)
-                        item = extract_item(page)
+                        # Bild-URL:erna kommer ur /api/item/detail/-svaret.
+                        item = fetch_photo_item(page, url, vid)
                         rows[vid]["nedladdad"] = download_images(item, vid)
                         sleep_a_bit()
                     else:
@@ -426,15 +451,19 @@ def main():
 
             print(f"[{i}/{len(urls)}] {url}")
             try:
-                page.goto(url, wait_until="domcontentloaded")
-                # Vänta bara tills JSON-taggen med siffrorna finns – snabbare
-                # och stabilare än att vänta på att hela nätverket blir tyst.
-                # state="attached": <script>-taggen finns i DOM men ritas
-                # aldrig ut, så vi får INTE vänta på att den blir "synlig".
-                page.wait_for_selector(
-                    "#__UNIVERSAL_DATA_FOR_REHYDRATION__",
-                    state="attached", timeout=15000)
-                item = extract_item(page)
+                if is_photo:
+                    # Foto-/karusellinlägg SSR:as inte – hämta ur API-svaret.
+                    item = fetch_photo_item(page, url, vid)
+                else:
+                    page.goto(url, wait_until="domcontentloaded")
+                    # Vänta bara tills JSON-taggen med siffrorna finns – snabbare
+                    # och stabilare än att vänta på att hela nätverket blir tyst.
+                    # state="attached": <script>-taggen finns i DOM men ritas
+                    # aldrig ut, så vi får INTE vänta på att den blir "synlig".
+                    page.wait_for_selector(
+                        "#__UNIVERSAL_DATA_FOR_REHYDRATION__",
+                        state="attached", timeout=15000)
+                    item = extract_item(page)
                 if not item:
                     print("  ! ingen data hittad – hoppar över")
                     continue
