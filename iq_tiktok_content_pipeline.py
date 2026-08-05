@@ -54,6 +54,11 @@ LIMIT = int(os.environ.get("IQ_LIMIT", "0") or 0)
 # Antal försök för vision-anropet vid övergående fel (överbelastning/timeout).
 VISION_MAX_RETRIES = int(os.environ.get("IQ_VISION_RETRIES", "6") or 6)
 
+# Säkring: avbryt hela körningen om så här många inlägg i rad misslyckas (tyder
+# på en pågående API-outage). Slösar då inte Whisper-tid på resten – kör igen
+# senare, redan klara hoppas över. 0 = stäng av säkringen.
+MAX_CONSECUTIVE_FAILS = int(os.environ.get("IQ_MAX_CONSECUTIVE_FAILS", "5") or 5)
+
 # Ungefärligt pris (USD per miljon tokens) för den löpande kostnadsräknaren.
 # Uppskattning – Sonnet 5 har intropris (~$2/$10) t.o.m. 2026-08-31.
 PRICING = {
@@ -424,6 +429,7 @@ def main():
         print(f"Återupptar – {done} inlägg redan analyserade, hoppar över dem.")
 
     todo = rows_a[:LIMIT] if LIMIT else rows_a
+    consecutive_fails = 0
     for i, row in enumerate(todo, 1):
         vid = row["video_id"]
         # Hoppa över redan analyserade.
@@ -441,6 +447,7 @@ def main():
             arow["rackvidd"] = prev_rackvidd
             enriched[vid] = arow
             write_all(enriched, out_fields)
+            consecutive_fails = 0
             continue
         try:
             if mp4:
@@ -473,10 +480,18 @@ def main():
             row["rackvidd"] = prev_rackvidd   # bevara ev. manuellt inklistrad reach
             enriched[vid] = row
             write_all(enriched, out_fields)   # spara progress efter varje inlägg
+            consecutive_fails = 0
             print(f"    hittills ~${est_cost():.2f}  "
                   f"({USAGE['in']:,}/{USAGE['out']:,} tokens in/ut)")
         except Exception as e:
             print(f"  ! fel på {vid}: {e}")
+            consecutive_fails += 1
+            if MAX_CONSECUTIVE_FAILS and consecutive_fails >= MAX_CONSECUTIVE_FAILS:
+                print(f"\nAvbryter: {consecutive_fails} inlägg i rad misslyckades "
+                      "– troligen ett pågående API-fel. Inget är förlorat (raderna "
+                      "sparades inte som klara). Kör skriptet igen senare så tas de "
+                      "kvarvarande inläggen om; redan klara hoppas över.")
+                break
     print(f"\nKlart: {OUT_CSV}\nUppskattad vision-kostnad: ~${est_cost():.2f}")
 
 
