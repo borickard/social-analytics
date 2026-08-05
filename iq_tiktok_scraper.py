@@ -79,7 +79,7 @@ MAX_VIDEOS = 20
 CSV_FIELDS = [
     "video_id", "url", "publiceringsdatum", "langd_sek",
     "visningar", "likes", "kommentarer", "delningar", "sparade",
-    "engagement_rate",
+    "engagement_rate", "rackvidd",
     "caption", "caption_langd", "antal_hashtags", "hashtags",
     "musik", "musik_original", "is_ad", "nedladdad", "thumbnail",
 ]
@@ -214,6 +214,7 @@ def parse_row(item):
         "delningar": shares,
         "sparade": saves,
         "engagement_rate": eng,
+        "rackvidd": "",   # fylls i i efterhand från TikTok Studio (join_reach.py)
         "caption": desc,
         "caption_langd": len(desc),
         "antal_hashtags": len(hashtags),

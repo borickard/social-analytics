@@ -66,8 +66,8 @@ CONTENT_FIELDS = [
     "cta", "har_cta",
     "alkohol_i_bild", "alkohol_marke", "alkohol_omnamns_verbalt", "alkohol_kontext",
     "save_rate", "share_rate", "likes_per_view",
-    "rackvidd",   # lämnas tom – fylls i manuellt från TikTok Studio (reach)
 ]
+# OBS: rackvidd ligger i Ström A (metrics-CSV:n) och följer med hit automatiskt.
 
 # Fälten vision-modellen ska returnera per video (härledda fält som
 # alkohol_omnamns_verbalt, har_cta och *_rate sätts i main(), inte här).
@@ -360,7 +360,8 @@ def main():
             continue
         print(f"[{i}/{len(todo)}] {vid}")
         mp4 = find_video(vid)
-        prev_rackvidd = enriched.get(vid, {}).get("rackvidd", "")  # bevara ev. manuell reach
+        # Bevara ev. redan inklistrad reach (enriched först, annars metrics-värdet).
+        prev_rackvidd = enriched.get(vid, {}).get("rackvidd", "") or row.get("rackvidd", "")
         if not mp4:
             print("  ! ingen videofil – skriver bara ström A-raden")
             arow = add_derived(dict(row))

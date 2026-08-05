@@ -106,20 +106,20 @@ python join_reach.py min_reach.csv   # eller ange filen
 ```
 
 Skriptet känner igen video-id/URL- och reach-kolumnerna automatiskt, matchar på
-`video_id` och lämnar videor utan reach-data tomma. Kör det *efter* att hela
-Ström B-körningen är klar.
+`video_id`, fyller i **både** metrics- och enriched-CSV:n (och lägger till
+kolumnen om den saknas) och lämnar videor utan reach-data tomma. Det kan köras
+när som helst – reach är ett resultatmått i Ström A och följer med in i enriched.
 
 ## Kalkylark-schema (berikad CSV)
 
 | Grupp | Kolumner |
 |---|---|
 | Identifiering | `video_id`, `url`, `publiceringsdatum`, `thumbnail` (`thumbnails/<id>.jpg`) |
-| Resultat (ström A) | `visningar`, `likes`, `kommentarer`, `delningar`, `sparade`, `engagement_rate`, `is_ad` (True = boostad) |
+| Resultat (ström A) | `visningar`, `likes`, `kommentarer`, `delningar`, `sparade`, `engagement_rate`, `rackvidd` (reach – fylls i efterhand), `is_ad` (True = boostad) |
 | Caption | `caption`, `caption_langd`, `antal_hashtags`, `hashtags`, `musik`, `musik_original` (ja/nej) |
 | Innehåll (ström B) | `langd_verifierad`, `upplosning`, `bildformat`, `transkript`, `hook_text`, `hook_typ`, `format`, `kategori`, `tema`, `text_i_bild`, `grafik_beskrivning`, `personer_i_bild`, `medverkande`, `cta`, `har_cta` |
 | Detektionsflaggor | `alkohol_i_bild`, `alkohol_marke`, `alkohol_omnamns_verbalt`, `alkohol_kontext` |
 | Nyckeltal (uträknade) | `save_rate`, `share_rate`, `likes_per_view` |
-| Räckvidd (manuell) | `rackvidd` – lämnas tom, fylls i i efterhand från TikTok Studio (joinas på `video_id`) |
 
 Kategoriska fält (`hook_typ`, `format`, `kategori`, `medverkande`, `har_cta`,
 alkoholflaggorna) har fasta värden och är gjorda för att gruppera/aggregera på i

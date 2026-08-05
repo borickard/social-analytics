@@ -25,6 +25,7 @@ import sys
 
 PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA = os.path.join(PROJECT_DIR, "iq_tiktok_data")
+METRICS = os.path.join(DATA, "iq_tiktok_metrics.csv")
 ENRICHED = os.path.join(DATA, "iq_tiktok_enriched.csv")
 DEFAULT_REACH = os.path.join(DATA, "reach.csv")
 
@@ -69,6 +70,36 @@ def clean_number(value):
     return (value or "").strip().replace(" ", "").replace(" ", "")
 
 
+def fill_file(path, reach_by_id):
+    """Fyll rackvidd i en CSV (metrics eller enriched); lägg till kolumnen om den
+    saknas. Returnerar mängden video_id som fanns i filen."""
+    with open(path, newline="", encoding="utf-8-sig") as f:
+        rows = list(csv.DictReader(f))
+    name = os.path.basename(path)
+    if not rows:
+        print(f"  {name}: tom – hoppar över.")
+        return set()
+    fields = list(rows[0].keys())
+    if "rackvidd" not in fields:
+        fields.append("rackvidd")
+    ids, filled = set(), 0
+    for row in rows:
+        vid = row.get("video_id", "")
+        ids.add(vid)
+        row.setdefault("rackvidd", "")
+        if reach_by_id.get(vid, "") != "":
+            row["rackvidd"] = reach_by_id[vid]
+            filled += 1
+    tmp = path + ".tmp"
+    with open(tmp, "w", newline="", encoding="utf-8-sig") as f:
+        w = csv.DictWriter(f, fieldnames=fields)
+        w.writeheader()
+        w.writerows(rows)
+    os.replace(tmp, path)
+    print(f"  {name}: fyllde reach på {filled} av {len(rows)} videor.")
+    return ids
+
+
 def main():
     reach_path = sys.argv[1] if len(sys.argv) > 1 else DEFAULT_REACH
     if not os.path.exists(ENRICHED):
@@ -95,34 +126,18 @@ def main():
         if vid:
             reach_by_id[vid] = clean_number(r.get(reach_col, ""))
 
-    with open(ENRICHED, newline="", encoding="utf-8-sig") as f:
-        rows = list(csv.DictReader(f))
-    if not rows:
-        sys.exit("Enriched-CSV:n är tom.")
-    fields = list(rows[0].keys())
-    if "rackvidd" not in fields:
-        sys.exit("Kolumnen 'rackvidd' saknas i enriched-CSV:n – kör senaste pipelinen.")
+    targets = [p for p in (METRICS, ENRICHED) if os.path.exists(p)]
+    if not targets:
+        sys.exit("Hittar varken metrics- eller enriched-CSV:n att fylla i.")
 
-    enriched_ids = {row.get("video_id", "") for row in rows}
-    filled = 0
-    for row in rows:
-        vid = row.get("video_id", "")
-        if reach_by_id.get(vid, "") != "":
-            row["rackvidd"] = reach_by_id[vid]
-            filled += 1
+    seen_ids = set()
+    for path in targets:
+        seen_ids |= fill_file(path, reach_by_id)
 
-    tmp = ENRICHED + ".tmp"
-    with open(tmp, "w", newline="", encoding="utf-8-sig") as f:
-        w = csv.DictWriter(f, fieldnames=fields)
-        w.writeheader()
-        w.writerows(rows)
-    os.replace(tmp, ENRICHED)
-
-    unmatched = [vid for vid in reach_by_id if vid not in enriched_ids]
-    print(f"Klart. Fyllde reach på {filled} av {len(rows)} videor i {ENRICHED}.")
+    unmatched = [vid for vid in reach_by_id if vid not in seen_ids]
     if unmatched:
-        print(f"OBS: {len(unmatched)} rader i reach-filen matchade ingen video i "
-              "enriched-CSV:n (kollades på video_id).")
+        print(f"OBS: {len(unmatched)} rader i reach-filen matchade ingen video "
+              "i CSV:erna (kollades på video_id).")
 
 
 if __name__ == "__main__":
