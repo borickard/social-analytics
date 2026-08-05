@@ -68,7 +68,7 @@ THUMB_DIR = os.path.join(OUT_DIR, "thumbnails")
 CSV_PATH = os.path.join(OUT_DIR, "iq_tiktok_metrics.csv")
 RAW_PATH = os.path.join(OUT_DIR, "iq_tiktok_raw.jsonl")
 
-DOWNLOAD_VIDEOS = False         # sätt True för att även ladda ner videofilerna
+DOWNLOAD_VIDEOS = True          # ladda ner mediet (videofiler + karusellbilder)
 USE_CHROME_COOKIES = True       # låter yt-dlp använda din Chrome-inloggning
 
 # Återupptagning:
@@ -82,8 +82,8 @@ SKIP_SCRAPED = True
 # Snäll, mänsklig takt – minskar risk för strypning. Öka vid problem.
 MIN_DELAY, MAX_DELAY = 2.5, 5.0
 
-# Begränsa antal videor (nyast först). Bra för att testa. Sätt 0 för alla.
-MAX_VIDEOS = 20
+# Begränsa antal inlägg (nyast först). Bra för att testa. Sätt 0 för alla.
+MAX_VIDEOS = 0
 
 CSV_FIELDS = [
     "video_id", "url", "typ", "publiceringsdatum", "langd_sek", "antal_bilder",
@@ -110,6 +110,10 @@ def load_existing():
     if os.path.exists(CSV_PATH):
         with open(CSV_PATH, newline="", encoding="utf-8-sig") as f:
             for row in csv.DictReader(f):
+                # Backfill för rader skrapade före foto-/karusellstödet: härled
+                # typ ur URL:en så gamla videorader inte får en tom typ-kolumn.
+                if not row.get("typ"):
+                    row["typ"] = "bild" if "/photo/" in row.get("url", "") else "video"
                 rows[row["video_id"]] = row
     return rows
 
