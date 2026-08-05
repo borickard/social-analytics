@@ -51,6 +51,10 @@ WHISPER_MODEL = os.environ.get("IQ_WHISPER_MODEL", "large-v3")
 # Testläge: analysera bara de N första (0 = alla). T.ex. IQ_LIMIT=3 för ett test.
 LIMIT = int(os.environ.get("IQ_LIMIT", "0") or 0)
 
+# Bearbeta bara foto-/karusellinlägg (typ=bild). Bra t.ex. när video-API:et
+# strular – fotona kräver ingen Whisper. Sätt via IQ_ONLY_PHOTOS=1.
+ONLY_PHOTOS = os.environ.get("IQ_ONLY_PHOTOS", "").strip().lower() not in ("", "0", "false", "nej")
+
 # Antal försök för vision-anropet vid övergående fel (överbelastning/timeout).
 VISION_MAX_RETRIES = int(os.environ.get("IQ_VISION_RETRIES", "6") or 6)
 
@@ -428,7 +432,13 @@ def main():
     if done:
         print(f"Återupptar – {done} inlägg redan analyserade, hoppar över dem.")
 
-    todo = rows_a[:LIMIT] if LIMIT else rows_a
+    todo = rows_a
+    if ONLY_PHOTOS:
+        todo = [r for r in todo
+                if r.get("typ") == "bild" or "/photo/" in (r.get("url") or "")]
+        print(f"ONLY_PHOTOS: bearbetar bara {len(todo)} foto-/karusellinlägg.")
+    if LIMIT:
+        todo = todo[:LIMIT]
     consecutive_fails = 0
     for i, row in enumerate(todo, 1):
         vid = row["video_id"]
