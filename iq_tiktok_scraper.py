@@ -5,11 +5,14 @@ IQ TikTok-scraper  –  Ström A (resultatdata) + nedladdning av videofiler.
 Vad skriptet gör
 ----------------
 1. Öppnar er profil i din INLOGGADE Chrome-profil (mindre bot-skydd, ingen headless).
-2. Scrollar profilen tills alla klipp laddats och samlar in video-URL:erna.
-3. För varje video läser den siffror + caption ur sidans inbäddade JSON
+2. Scrollar profilen tills alla inlägg laddats och samlar in URL:erna –
+   både vanliga videor (/video/) och foto-/karusellinlägg (/photo/).
+3. För varje inlägg läser den siffror + caption ur sidans inbäddade JSON
    (#__UNIVERSAL_DATA_FOR_REHYDRATION__) – ingen OCR, inga skärmdumpar.
-4. Laddar ner själva videofilen med yt-dlp (för innehållsanalysen sen).
-5. Skriver en CSV (en rad per video) + en rå JSONL som säkerhetskopia.
+4. Laddar ner mediet: videofilen med yt-dlp, eller – för foto-/karusellinlägg –
+   de enskilda bilderna till images/<id>/ (för innehållsanalysen sen).
+5. Skriver en CSV (en rad per inlägg) + en rå JSONL som säkerhetskopia.
+   Kolumnen 'typ' är "video" eller "bild"; 'antal_bilder' anger bildantal.
 
 RÄCKVIDD (reach) ingår INTE med flit – det kräver TikTok Studio och är den
 enda knöliga biten. Vi utgår från visningar (playCount). Reach kan joinas in
@@ -38,9 +41,11 @@ import json
 import os
 import random
 import re
+import shutil
 import subprocess
 import sys
 import time
+import urllib.request
 
 from playwright.sync_api import sync_playwright
 
@@ -55,6 +60,10 @@ USER_DATA_DIR = os.path.expanduser("~/iq_tiktok_chrome_profil")
 PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
 OUT_DIR = os.path.join(PROJECT_DIR, "iq_tiktok_data")
 VIDEO_DIR = os.path.join(OUT_DIR, "videos")
+# Foto-/karusellinlägg (photo posts) har ingen videofil. Deras enskilda bilder
+# laddas ner till images/<id>/01.jpg, 02.jpg ... och används sen som "frames"
+# i innehållsanalysen (Ström B) i stället för utklippta nyckelbilder.
+IMAGE_DIR = os.path.join(OUT_DIR, "images")
 THUMB_DIR = os.path.join(OUT_DIR, "thumbnails")
 CSV_PATH = os.path.join(OUT_DIR, "iq_tiktok_metrics.csv")
 RAW_PATH = os.path.join(OUT_DIR, "iq_tiktok_raw.jsonl")
@@ -77,12 +86,17 @@ MIN_DELAY, MAX_DELAY = 2.5, 5.0
 MAX_VIDEOS = 20
 
 CSV_FIELDS = [
-    "video_id", "url", "publiceringsdatum", "langd_sek",
+    "video_id", "url", "typ", "publiceringsdatum", "langd_sek", "antal_bilder",
     "visningar", "likes", "kommentarer", "delningar", "sparade",
     "engagement_rate", "rackvidd",
     "caption", "caption_langd", "antal_hashtags", "hashtags",
     "musik", "musik_original", "is_ad", "nedladdad", "thumbnail",
 ]
+
+# Webbläsar-UA för bildnedladdningen. TikToks bild-CDN kräver inga cookies men
+# svarar bättre med en riktig User-Agent + Referer.
+IMG_UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
+          "(KHTML, like Gecko) Chrome/124.0 Safari/537.36")
 # -----------------------------------------------------------------------------
 
 
@@ -128,19 +142,28 @@ def thumb_rel(video_id):
     return os.path.relpath(hits[0], OUT_DIR) if hits else ""
 
 
-def collect_video_urls(page):
-    """Scrolla profilen tills antalet länkar slutar växa; returnera URL:erna."""
-    print("Scrollar profilen för att ladda alla klipp ...")
+def images_exist(video_id):
+    """Finns minst en nedladdad bild för ett foto-/karusellinlägg?"""
+    return bool(glob.glob(os.path.join(IMAGE_DIR, video_id, "*")))
+
+
+def collect_post_urls(page):
+    """Scrolla profilen tills antalet länkar slutar växa; returnera URL:erna.
+
+    Samlar både vanliga videor (/video/<id>) och foto-/karusellinlägg
+    (/photo/<id>) – båda ligger i samma profilrutnät."""
+    print("Scrollar profilen för att ladda alla inlägg ...")
     seen, stagnant = set(), 0
-    # Ta bara IQ:s EGNA videor. Profilsidan innehåller även rekommenderade
+    # Ta bara IQ:s EGNA inlägg. Profilsidan innehåller även rekommenderade
     # klipp från andra konton – utan filtret slinker de med.
-    own_prefix = PROFILE_URL.rstrip("/") + "/video/"
+    own = PROFILE_URL.rstrip("/")
+    own_prefixes = (own + "/video/", own + "/photo/")
     while stagnant < 5:
         hrefs = page.eval_on_selector_all(
-            'a[href*="/video/"]', "els => els.map(e => e.href)")
+            'a[href*="/video/"], a[href*="/photo/"]', "els => els.map(e => e.href)")
         before = len(seen)
         seen.update(h.split("?")[0] for h in hrefs
-                    if h.split("?")[0].startswith(own_prefix))
+                    if h.split("?")[0].startswith(own_prefixes))
         # Nyaste ligger överst, så vid en begränsad testkörning kan vi sluta
         # så fort vi har tillräckligt – slipper scrolla hela profilen.
         if MAX_VIDEOS and len(seen) >= MAX_VIDEOS:
@@ -150,20 +173,23 @@ def collect_video_urls(page):
         # i vy. page.mouse.wheel kräver rätt muspekarläge och missar ofta.
         page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
         page.evaluate(
-            "() => { const a = document.querySelectorAll('a[href*=\"/video/\"]');"
+            "() => { const a = document.querySelectorAll("
+            "'a[href*=\"/video/\"], a[href*=\"/photo/\"]');"
             " if (a.length) a[a.length - 1].scrollIntoView(); }")
         try:
             page.keyboard.press("End")
         except Exception:
             pass
         time.sleep(random.uniform(1.5, 3.0))
-    print(f"Hittade {len(seen)} videor.")
+    n_photo = sum(1 for u in seen if "/photo/" in u)
+    print(f"Hittade {len(seen)} inlägg ({len(seen) - n_photo} videor, "
+          f"{n_photo} foto/karusell).")
 
-    # Sortera nyast först (TikToks video-id växer med tiden), begränsa ev.
-    def _vid_id(u):
+    # Sortera nyast först (TikToks id växer med tiden), begränsa ev.
+    def _post_id(u):
         tail = u.rstrip("/").split("/")[-1]
         return int(tail) if tail.isdigit() else 0
-    ordered = sorted(seen, key=_vid_id, reverse=True)
+    ordered = sorted(seen, key=_post_id, reverse=True)
     if MAX_VIDEOS:
         ordered = ordered[:MAX_VIDEOS]
         print(f"Begränsar till {len(ordered)} nyaste (MAX_VIDEOS={MAX_VIDEOS}).")
@@ -180,13 +206,43 @@ def dig(d, *path, default=None):
 
 
 def extract_item(page):
-    """Plocka ut itemStruct ur den inbäddade rehydration-JSON:en."""
+    """Plocka ut itemStruct ur den inbäddade rehydration-JSON:en.
+
+    Fungerar för både videor och foto-/karusellinlägg. Vanligen ligger båda
+    under 'webapp.video-detail'; skulle ett foto-inlägg hamna under en annan
+    scope-nyckel letar vi upp itemInfo.itemStruct var den än finns."""
     raw = page.eval_on_selector(
         "#__UNIVERSAL_DATA_FOR_REHYDRATION__", "el => el.textContent")
     data = json.loads(raw)
     scope = data.get("__DEFAULT_SCOPE__", {})
     item = dig(scope, "webapp.video-detail", "itemInfo", "itemStruct", default={})
-    return item
+    if item:
+        return item
+    for v in scope.values():                      # fallback för foto-inlägg
+        if isinstance(v, dict):
+            it = dig(v, "itemInfo", "itemStruct", default=None)
+            if it:
+                return it
+    return {}
+
+
+def image_urls(item):
+    """Bild-URL:er för ett foto-/karusellinlägg (tom lista för vanliga videor).
+
+    Bilderna ligger i itemStruct som item['imagePost']['images'][*]
+    ['imageURL']['urlList']. Första URL:en i varje lista är originalet."""
+    images = dig(item, "imagePost", "images", default=[]) or []
+    urls = []
+    for img in images:
+        url_list = dig(img, "imageURL", "urlList", default=[]) or []
+        if url_list:
+            urls.append(url_list[0])
+    return urls
+
+
+def is_photo_item(item):
+    """True om itemStruct är ett foto-/karusellinlägg (har ett imagePost-block)."""
+    return bool(dig(item, "imagePost"))
 
 
 def parse_row(item):
@@ -203,11 +259,17 @@ def parse_row(item):
     date = ""
     if created:
         date = time.strftime("%Y-%m-%d", time.gmtime(int(created)))
+    # Foto-/karusellinlägg har ingen video (ingen speltid) men N bilder.
+    photo = is_photo_item(item)
+    n_bilder = len(image_urls(item)) if photo else ""
+    slug = "photo" if photo else "video"
     return {
         "video_id": item.get("id", ""),
-        "url": f"{PROFILE_URL}/video/{item.get('id','')}",
+        "url": f"{PROFILE_URL}/{slug}/{item.get('id','')}",
+        "typ": "bild" if photo else "video",
         "publiceringsdatum": date,
-        "langd_sek": dig(item, "video", "duration", default=""),
+        "langd_sek": "" if photo else dig(item, "video", "duration", default=""),
+        "antal_bilder": n_bilder,
         "visningar": views,
         "likes": likes,
         "kommentarer": comments,
@@ -260,13 +322,59 @@ def download_video(url, video_id):
         return "nej"
 
 
+def _fetch_image(url, out_path):
+    """Hämta en bild via HTTP till out_path. Returnerar True vid lyckad hämtning."""
+    req = urllib.request.Request(
+        url, headers={"User-Agent": IMG_UA, "Referer": "https://www.tiktok.com/"})
+    try:
+        with urllib.request.urlopen(req, timeout=30) as r:
+            data = r.read()
+        with open(out_path, "wb") as f:
+            f.write(data)
+        return True
+    except Exception as e:
+        print(f"  ! bildhämtning misslyckades: {e}")
+        return False
+
+
+def download_images(item, video_id):
+    """Ladda ner ett foto-/karusellinläggs bilder till images/<id>/NN.jpg och
+    sätt thumbnailen (thumbnails/<id>.jpg) till första bilden.
+
+    Idempotent: redan hämtade bilder hoppas över. Returnerar 'ja' om minst en
+    bild finns på disk efteråt, annars 'nej'."""
+    urls = image_urls(item)
+    if not urls:
+        return "nej"
+    dest = os.path.join(IMAGE_DIR, video_id)
+    os.makedirs(dest, exist_ok=True)
+    saved = 0
+    for idx, u in enumerate(urls, 1):
+        out = os.path.join(dest, f"{idx:02d}.jpg")
+        if os.path.exists(out):
+            saved += 1
+            continue
+        if _fetch_image(u, out):
+            saved += 1
+    # Thumbnail = första bilden (för dashboard/översikt), som för videor.
+    first = os.path.join(dest, "01.jpg")
+    thumb = os.path.join(THUMB_DIR, f"{video_id}.jpg")
+    if os.path.exists(first) and not os.path.exists(thumb):
+        try:
+            shutil.copyfile(first, thumb)
+        except Exception as e:
+            print(f"  ! kunde inte skapa thumbnail ({video_id}): {e}")
+    return "ja" if saved else "nej"
+
+
 def main():
     os.makedirs(VIDEO_DIR, exist_ok=True)
+    os.makedirs(IMAGE_DIR, exist_ok=True)
     os.makedirs(THUMB_DIR, exist_ok=True)
     rows = load_existing()
     if rows:
         lage = "hoppar över dem" if SKIP_SCRAPED else "uppdaterar deras siffror"
-        print(f"{len(rows)} videor finns redan i CSV:n ({lage}).")
+        print(f"{len(rows)} inlägg finns redan i CSV:n ({lage}).")
 
     with sync_playwright() as p:
         ctx = p.chromium.launch_persistent_context(
@@ -280,18 +388,32 @@ def main():
         # Ge dig chans att logga in / passera ev. captcha vid första körningen.
         input("Logga in i fönstret om det behövs, tryck sedan ENTER här ...")
 
-        urls = collect_video_urls(page)
+        urls = collect_post_urls(page)
 
         for i, url in enumerate(urls, 1):
             vid = url.rstrip("/").split("/")[-1]
+            is_photo = "/photo/" in url
+            # Är själva mediet (video ELLER bilder) + thumbnail redan på disk?
+            have_media = ((images_exist(vid) if is_photo else video_exists(vid))
+                          and thumb_exists(vid))
 
             # Återupptagningsläge: metadatan finns redan.
             if SKIP_SCRAPED and vid in rows:
-                # Ladda ändå ner video/thumbnail om något saknas (t.ex. steg 2
+                # Ladda ändå ner media/thumbnail om något saknas (t.ex. steg 2
                 # efter att steg 1 hämtat bara siffror). Finns allt görs inget.
-                if DOWNLOAD_VIDEOS and not (video_exists(vid) and thumb_exists(vid)):
-                    print(f"[{i}/{len(urls)}] {vid} – metadata finns, hämtar video/thumbnail")
-                    rows[vid]["nedladdad"] = download_video(url, vid)
+                if DOWNLOAD_VIDEOS and not have_media:
+                    print(f"[{i}/{len(urls)}] {vid} – metadata finns, hämtar media/thumbnail")
+                    if is_photo:
+                        # Bild-URL:erna sitter i sidans JSON – ladda sidan igen.
+                        page.goto(url, wait_until="domcontentloaded")
+                        page.wait_for_selector(
+                            "#__UNIVERSAL_DATA_FOR_REHYDRATION__",
+                            state="attached", timeout=15000)
+                        item = extract_item(page)
+                        rows[vid]["nedladdad"] = download_images(item, vid)
+                        sleep_a_bit()
+                    else:
+                        rows[vid]["nedladdad"] = download_video(url, vid)
                     rows[vid]["thumbnail"] = thumb_rel(vid)
                     write_all(rows)
                 else:
@@ -323,7 +445,12 @@ def main():
                     f.write(json.dumps(item, ensure_ascii=False) + "\n")
                 row = parse_row(item)
                 if DOWNLOAD_VIDEOS:
-                    row["nedladdad"] = download_video(url, row["video_id"])
+                    # Foto-/karusellinlägg: ladda ner de enskilda bilderna.
+                    # Vanlig video: ladda ner videofilen med yt-dlp.
+                    if is_photo_item(item):
+                        row["nedladdad"] = download_images(item, row["video_id"])
+                    else:
+                        row["nedladdad"] = download_video(url, row["video_id"])
                 row["thumbnail"] = thumb_rel(row["video_id"])
                 rows[row["video_id"]] = row     # infoga/ersätt
                 write_all(rows)                 # spara progress efter varje video
@@ -333,7 +460,7 @@ def main():
 
         ctx.close()
 
-    print(f"\nKlart. CSV: {CSV_PATH}\nVideor: {VIDEO_DIR}")
+    print(f"\nKlart. CSV: {CSV_PATH}\nVideor: {VIDEO_DIR}\nBilder: {IMAGE_DIR}")
 
 
 if __name__ == "__main__":

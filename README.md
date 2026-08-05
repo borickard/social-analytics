@@ -1,9 +1,10 @@
 # IQ – automatiserad analys av TikTok-innehåll vs resultat
 
 Kopplar innehåll till resultat för [@iqinitiativet](https://www.tiktok.com/@iqinitiativet)
-på TikTok: en rad per video med både innehållsvariabler (vad som visas/sägs,
+på TikTok: en rad per inlägg med både innehållsvariabler (vad som visas/sägs,
 format, hook, alkoholflaggor) och resultatsiffror (visningar, engagemang).
-Körs manuellt då och då – inte som driftsatt tjänst.
+Både vanliga videor och foto-/karusellinlägg (`/photo/`) tas med. Körs manuellt
+då och då – inte som driftsatt tjänst.
 
 ## Arkitektur
 
@@ -13,26 +14,34 @@ Två dataströmmar som joinas på `video_id`:
   TikTok-profil
        │
        ▼
- [ Ström A: iq_tiktok_scraper.py ]        ← resultatdata + videofiler
-   • scrolla profil → video-URL:er
+ [ Ström A: iq_tiktok_scraper.py ]        ← resultatdata + media
+   • scrolla profil → URL:er (/video/ + /photo/)
    • läs metrics + caption ur inbäddad JSON
-   • ladda ner videofil (yt-dlp)
+   • ladda ner videofil (yt-dlp) ELLER karusellens bilder
        │
        ├── iq_tiktok_data/iq_tiktok_metrics.csv   (siffror + caption)
-       ├── iq_tiktok_data/videos/<id>.mp4         (för ström B)
+       ├── iq_tiktok_data/videos/<id>.mp4         (video, för ström B)
+       ├── iq_tiktok_data/images/<id>/NN.jpg      (foto/karusell, för ström B)
        ├── iq_tiktok_data/thumbnails/<id>.jpg     (för dashboard)
        └── iq_tiktok_data/iq_tiktok_raw.jsonl     (rå fallback)
        │
        ▼
  [ Ström B: iq_tiktok_content_pipeline.py ]   ← innehållsanalys
    • ffprobe  → längd, upplösning, bildformat
-   • ffmpeg   → nyckelbilder (scendetektering)
-   • Whisper  → transkript (vad sägs) + hook_text
+   • ffmpeg   → nyckelbilder (scendetektering)   [bara video]
+   • Whisper  → transkript (vad sägs) + hook_text [bara video]
    • Claude   → vad visas, text i bild (OCR), format, alkoholflaggor
        │
        ▼
    iq_tiktok_data/iq_tiktok_enriched.csv   ← berikad CSV för analys
 ```
+
+**Foto-/karusellinlägg** hanteras genom hela kedjan. De har ingen video och
+inget ljud: Ström A laddar ner de enskilda bilderna till `images/<id>/`, och
+Ström B skickar dem direkt till vision-modellen (ingen Whisper, ingen
+ffmpeg-utklippning). `transkript`, `hook_text` och `langd_sek`/`langd_verifierad`
+lämnas tomma; kolumnen `typ` skiljer `video` från `bild` och `antal_bilder`
+anger bildantalet. Siffror och alkoholanalys fungerar likadant som för videor.
 
 **Räckvidd (reach) ingår medvetet inte** – det kräver TikTok Studio. Vi utgår
 från visningar (`playCount`). Reach kan joinas in på `video_id` senare via en
@@ -67,7 +76,7 @@ Inställningar (överst i skriptet):
 
 | Inställning | Betydelse |
 |---|---|
-| `DOWNLOAD_VIDEOS` | `False` = bara siffror (snabbt). `True` = ladda även ner videofilerna som Ström B behöver. |
+| `DOWNLOAD_VIDEOS` | `False` = bara siffror (snabbt). `True` = ladda även ner mediet som Ström B behöver (videofiler resp. karusellbilder). |
 | `MAX_VIDEOS` | Begränsa antal (nyast först). `0` = alla. Bra för att testa. |
 | `SKIP_SCRAPED` | `True` = återuppta: hoppa över videor som redan har metadata (men ladda ändå ner ev. saknade videofiler). `False` = hämta om och **uppdatera siffrorna** (visningar/likes ändras över tid). |
 
@@ -118,7 +127,7 @@ före 2024-08-05 för reach) lämnas tomma. Kan köras när som helst.
 
 | Grupp | Kolumner |
 |---|---|
-| Identifiering | `video_id`, `url`, `publiceringsdatum`, `thumbnail` (`thumbnails/<id>.jpg`) |
+| Identifiering | `video_id`, `url`, `typ` (`video`/`bild`), `antal_bilder` (foto/karusell), `publiceringsdatum`, `thumbnail` (`thumbnails/<id>.jpg`) |
 | Resultat (ström A) | `visningar`, `likes`, `kommentarer`, `delningar`, `sparade`, `engagement_rate`, `rackvidd` (reach – fylls i efterhand), `is_ad` (True = boostad) |
 | Caption | `caption`, `caption_langd`, `antal_hashtags`, `hashtags`, `musik`, `musik_original` (ja/nej) |
 | Innehåll (ström B) | `langd_verifierad`, `upplosning`, `bildformat`, `transkript`, `hook_text`, `hook_typ`, `format`, `kategori`, `tema`, `text_i_bild`, `grafik_beskrivning`, `personer_i_bild`, `medverkande`, `cta`, `har_cta` |

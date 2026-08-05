@@ -1,7 +1,13 @@
 #!/usr/bin/env python3
 """
-Ström B – innehållspipeline. Läser videos/<id>.mp4 + iq_tiktok_metrics.csv,
-producerar iq_tiktok_enriched.csv. Kör efter iq_tiktok_scraper.py.
+Ström B – innehållspipeline. Läser videos/<id>.mp4 (och foto-/karusellinläggens
+bilder i images/<id>/) + iq_tiktok_metrics.csv, producerar
+iq_tiktok_enriched.csv. Kör efter iq_tiktok_scraper.py.
+
+Videor transkriberas (Whisper) och nyckelbilder klipps ut (ffmpeg) innan
+vision-analysen. Foto-/karusellinlägg har inget ljud och ingen film: deras
+nedladdade bilder skickas direkt till vision-modellen (ingen Whisper, ingen
+ffmpeg-utklippning), och transkript/hook_text lämnas tomma.
 
 Beroenden:
     pip install faster-whisper anthropic
@@ -27,6 +33,9 @@ import tempfile
 PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA = os.path.join(PROJECT_DIR, "iq_tiktok_data")
 VIDEO_DIR = os.path.join(DATA, "videos")
+# Foto-/karusellinlägg saknar videofil; deras bilder ligger i images/<id>/ och
+# används som "frames" direkt (ingen ffmpeg-utklippning, ingen transkribering).
+IMAGE_DIR = os.path.join(DATA, "images")
 IN_CSV = os.path.join(DATA, "iq_tiktok_metrics.csv")
 OUT_CSV = os.path.join(DATA, "iq_tiktok_enriched.csv")
 
@@ -85,8 +94,9 @@ VISION_SCHEMA = {
         "format": {
             "type": "string",
             "enum": ["talking_head", "voiceover_broll", "skarminspelning",
-                     "animerat", "ovrigt"],
-            "description": "Övergripande videoformat.",
+                     "animerat", "bildinlagg", "ovrigt"],
+            "description": "Övergripande format. Använd 'bildinlagg' för "
+                           "foto-/karusellinlägg (stillbilder, ingen film).",
         },
         "kategori": {
             "type": "string",
@@ -144,17 +154,29 @@ VISION_SCHEMA = {
     "required": VISION_KEYS,
 }
 
-VISION_PROMPT = (
+# Intro-meningarna skiljer sig mellan video och foto/karusell; resten delas.
+VISION_INTRO_VIDEO = (
     "Du analyserar en TikTok-video från IQ (iqinitiativet), en svensk "
     "organisation som arbetar för en smartare attityd till alkohol.\n\n"
     "Du får ett antal nyckelbilder ur videon (i ordning), ett transkript av "
     "det som sägs samt videons caption. Beskriv INNEHÅLLET och fyll i "
     "strukturen.\n\n"
+)
+VISION_INTRO_PHOTO = (
+    "Du analyserar ett TikTok-BILDINLÄGG (ett foto eller en bildkarusell) från "
+    "IQ (iqinitiativet), en svensk organisation som arbetar för en smartare "
+    "attityd till alkohol.\n\n"
+    "Du får inläggets samtliga bilder (i ordning) samt captionen. Det finns "
+    "inget tal och inget ljud, alltså inget transkript. Behandla första bilden "
+    "som hook och sätt format='bildinlagg'. Beskriv INNEHÅLLET och fyll i "
+    "strukturen.\n\n"
+)
+VISION_BODY = (
     "Instruktioner:\n"
     "- Läs av (OCR) all text och grafik som syns i bild – återge svensk text "
     "ordagrant.\n"
-    "- Bedöm videoformat och innehållskategori. Klassa hook_typ utifrån de "
-    "första sekunderna (tal + första bilden).\n"
+    "- Bedöm format och innehållskategori. Klassa hook_typ utifrån början "
+    "(tal + första bilden, eller enbart första bilden för bildinlägg).\n"
     "- medverkande: ingen / en_person / flera_personer.\n"
     "- CTA (lista): fånga varje uppmaning oavsett om den är talad, syns i bild "
     "eller är en länk i captionen (t.ex. en webbadress). Tom lista om ingen finns.\n"
@@ -165,6 +187,10 @@ VISION_PROMPT = (
     "lista för listfält och 'ingen'/'nej' för alkoholfälten.\n"
     "- Svara endast på svenska i fritextfälten.\n"
 )
+
+
+def vision_prompt(is_photo):
+    return (VISION_INTRO_PHOTO if is_photo else VISION_INTRO_VIDEO) + VISION_BODY
 
 
 def ffprobe(path):
@@ -226,7 +252,15 @@ def find_video(video_id):
     return hits[0] if hits else None
 
 
-def call_vision(frames, transcript, caption=""):
+def find_images(video_id):
+    """Hitta ett foto-/karusellinläggs bilder (images/<id>/NN.jpg), i ordning."""
+    d = os.path.join(IMAGE_DIR, video_id)
+    return sorted(glob.glob(os.path.join(d, "*.jpg"))
+                  + glob.glob(os.path.join(d, "*.png"))
+                  + glob.glob(os.path.join(d, "*.jpeg")))
+
+
+def call_vision(frames, transcript, caption="", is_photo=False):
     """
     Skicka nyckelbilderna + transkriptet + captionen till Claude och be om JSON
     enligt VISION_SCHEMA. Returnerar ett dict med nycklarna i VISION_KEYS.
@@ -234,16 +268,16 @@ def call_vision(frames, transcript, caption=""):
     Robust: vid fel loggas det och tomma värden returneras så att pipelinen
     kan fortsätta (rådata finns kvar i CSV:n som ström A skrev).
     """
-    import anthropic
-
     empty = {k: ("nej" if k == "alkohol_i_bild"
                  else "ingen" if k == "alkohol_kontext"
                  else "") for k in VISION_KEYS}
     if not frames:
         return empty
 
-    # Bygg innehållsblocken: en text + bilderna + transkriptet.
-    content = [{"type": "text", "text": VISION_PROMPT}]
+    import anthropic
+
+    # Bygg innehållsblocken: en text + bilderna + transkript/caption.
+    content = [{"type": "text", "text": vision_prompt(is_photo)}]
     for fp in frames:
         with open(fp, "rb") as fh:
             b64 = base64.standard_b64encode(fh.read()).decode("utf-8")
@@ -251,11 +285,11 @@ def call_vision(frames, transcript, caption=""):
             "type": "image",
             "source": {"type": "base64", "media_type": "image/jpeg", "data": b64},
         })
-    content.append({
-        "type": "text",
-        "text": (f"Transkript av det som sägs:\n{transcript or '(inget tal)'}\n\n"
-                 f"Caption:\n{caption or '(ingen)'}"),
-    })
+    # Bildinlägg har inget tal – då utelämnar vi transkript-raden helt.
+    tail = (f"Caption:\n{caption or '(ingen)'}" if is_photo else
+            f"Transkript av det som sägs:\n{transcript or '(inget tal)'}\n\n"
+            f"Caption:\n{caption or '(ingen)'}")
+    content.append({"type": "text", "text": tail})
 
     client = anthropic.Anthropic()
     try:
@@ -328,6 +362,14 @@ def _has_content(val):
     return bool(s)
 
 
+def is_analyzed(row):
+    """Har raden redan analyserats i Ström B?
+
+    En analyserad video har verifierad längd; ett analyserat bildinlägg har
+    ingen längd men en upplösning. Skelettrader (utan media) har varken."""
+    return bool(row.get("langd_verifierad") or row.get("upplosning"))
+
+
 def add_derived(row):
     """Härledda nyckeltal ur Ström A-siffrorna + har_cta ur cta-fältet."""
     row["save_rate"] = _rate(row.get("sparade"), row.get("visningar"))
@@ -347,37 +389,51 @@ def main():
     out_fields = list(rows_a[0].keys()) + CONTENT_FIELDS
 
     enriched = load_enriched()
-    done = sum(1 for r in enriched.values() if r.get("langd_verifierad"))
+    done = sum(1 for r in enriched.values() if is_analyzed(r))
     if done:
-        print(f"Återupptar – {done} videor redan analyserade, hoppar över dem.")
+        print(f"Återupptar – {done} inlägg redan analyserade, hoppar över dem.")
 
     todo = rows_a[:LIMIT] if LIMIT else rows_a
     for i, row in enumerate(todo, 1):
         vid = row["video_id"]
-        # Hoppa över redan analyserade (langd_verifierad satt = klar).
-        if enriched.get(vid, {}).get("langd_verifierad"):
+        # Hoppa över redan analyserade.
+        if is_analyzed(enriched.get(vid, {})):
             print(f"[{i}/{len(todo)}] {vid} – redan analyserad, hoppar över")
             continue
         print(f"[{i}/{len(todo)}] {vid}")
         mp4 = find_video(vid)
+        images = find_images(vid)
         # Bevara ev. redan inklistrad reach (enriched först, annars metrics-värdet).
         prev_rackvidd = enriched.get(vid, {}).get("rackvidd", "") or row.get("rackvidd", "")
-        if not mp4:
-            print("  ! ingen videofil – skriver bara ström A-raden")
+        if not mp4 and not images:
+            print("  ! varken videofil eller bilder – skriver bara ström A-raden")
             arow = add_derived(dict(row))
             arow["rackvidd"] = prev_rackvidd
             enriched[vid] = arow
             write_all(enriched, out_fields)
             continue
         try:
-            meta = ffprobe(mp4)
-            transcript, hook = transcribe(mp4)
-            with tempfile.TemporaryDirectory() as tmp:
-                frames = extract_keyframes(mp4, tmp)
-                vision = call_vision(frames, transcript, row.get("caption", ""))
+            if mp4:
+                meta = ffprobe(mp4)
+                transcript, hook = transcribe(mp4)
+                with tempfile.TemporaryDirectory() as tmp:
+                    frames = extract_keyframes(mp4, tmp)
+                    vision = call_vision(frames, transcript,
+                                         row.get("caption", ""), is_photo=False)
+            else:
+                # Foto-/karusellinlägg: bilderna ÄR nyckelbilderna. Ingen film,
+                # inget ljud → hoppa över ffmpeg-utklippning och Whisper.
+                # ffprobe på första bilden ger ändå upplösning/bildformat.
+                meta = ffprobe(images[0])
+                meta["langd_verifierad"] = ""      # stillbilder har ingen speltid
+                transcript, hook = "", ""
+                frames = images[:12]
+                vision = call_vision(frames, "",
+                                     row.get("caption", ""), is_photo=True)
             row.update(meta)
             row["transkript"] = transcript
             row["hook_text"] = hook
+            # Verbalt omnämnande kräver tal; bildinlägg (tomt transkript) → nej.
             row["alkohol_omnamns_verbalt"] = (
                 "ja" if any(k in (transcript or "").lower() for k in ALKOHOL_ORD)
                 else "nej")
@@ -386,7 +442,7 @@ def main():
             add_derived(row)
             row["rackvidd"] = prev_rackvidd   # bevara ev. manuellt inklistrad reach
             enriched[vid] = row
-            write_all(enriched, out_fields)   # spara progress efter varje video
+            write_all(enriched, out_fields)   # spara progress efter varje inlägg
             print(f"    hittills ~${est_cost():.2f}  "
                   f"({USAGE['in']:,}/{USAGE['out']:,} tokens in/ut)")
         except Exception as e:
