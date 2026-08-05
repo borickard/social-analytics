@@ -73,8 +73,8 @@ USE_CHROME_COOKIES = True       # låter yt-dlp använda din Chrome-inloggning
 
 # Bearbeta BARA foto-/karusellinlägg (hoppa över alla videor). Bra för att
 # komplettera datasetet med fotona utan att röra de redan skrapade videorna
-# eller dra igång stora videonedladdningar. Sätt False för en vanlig körning.
-ONLY_PHOTOS = True
+# eller dra igång stora videonedladdningar. Sätt True vid behov.
+ONLY_PHOTOS = False
 
 # Återupptagning:
 #   True  = hoppa över videor som redan har metadata (ladda ändå ner ev.
