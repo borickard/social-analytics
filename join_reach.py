@@ -33,19 +33,32 @@ DEFAULT_REACH = os.path.join(DATA, "reach.csv")
 ID_HINTS = ["video_id", "videoid", "video id", "post id", "post_id", "id"]
 URL_HINTS = ["url", "länk", "lank", "link", "video url", "video-länk", "video link"]
 REACH_HINTS = ["rackvidd", "räckvidd", "reach", "nådda konton", "nadda konton",
+               "nådda tittare", "unika tittare", "unika visningar",
                "unique viewers", "accounts reached", "reached audience"]
 
 
 def sniff_read(path):
-    """Läs en CSV oavsett komma/semikolon/tab och UTF-8(-BOM)."""
+    """Läs en CSV/TSV oavsett avgränsare (tab/komma/semikolon) och UTF-8(-BOM).
+    Hoppar även över ev. titel-/metadatarader före den riktiga rubrikraden
+    (TikTok Studio lägger t.ex. en 'Video(datum-datum)'-rad överst)."""
     with open(path, newline="", encoding="utf-8-sig") as f:
-        sample = f.read(4096)
-        f.seek(0)
-        try:
-            dialect = csv.Sniffer().sniff(sample, delimiters=",;\t")
-        except csv.Error:
-            dialect = csv.excel
-        return list(csv.DictReader(f, dialect=dialect))
+        head = [ln for ln in (next(f, "") for _ in range(20)) if ln.strip()]
+    if not head:
+        return []
+    # Välj den avgränsare som ger flest kolumner.
+    best = max(["\t", ";", ","], key=lambda d: max(ln.count(d) for ln in head))
+    width = max(ln.count(best) for ln in head)
+    if width == 0:                      # bara en kolumn – strunta i avgränsare
+        best = ","
+    # Rubrikraden = första raden med full bredd (hoppar över titelrader).
+    start = 0
+    with open(path, newline="", encoding="utf-8-sig") as f:
+        alllines = list(f)
+    for i, ln in enumerate(alllines):
+        if ln.strip() and ln.count(best) >= width:
+            start = i
+            break
+    return list(csv.DictReader(alllines[start:], delimiter=best))
 
 
 def find_col(fieldnames, hints):
@@ -53,8 +66,9 @@ def find_col(fieldnames, hints):
     for h in hints:                       # exakt match först
         if h in low:
             return low[h]
-    for c in fieldnames:                  # sen delmatchning
-        if any(h in c.lower() for h in hints):
+    for c in fieldnames:                  # sen delmatchning – bara specifika (>=4 tecken)
+        cl = c.lower()                     # så korta "id"/"url" inte råkar träffa "videotitel"
+        if any(len(h) >= 4 and h in cl for h in hints):
             return c
     return None
 
