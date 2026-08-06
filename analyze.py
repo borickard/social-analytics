@@ -174,6 +174,7 @@ def post_json(r):
         "teman": parse_list(r.get("budskap_teman", "")),
         "alk": r.get("alkohol_i_bild", "") or "?",
         "alkkontext": r.get("alkohol_kontext", "") or "ingen",
+        "hogtid": r.get("hogtid", ""),
         "organic": is_organic(r),
         "er": round(r["_er"], 6),
         "views": int(r["_views"]),
@@ -206,6 +207,9 @@ const DIMS = [
 if(window.HAS_TONE){
   DIMS.splice(5,0,{id:'ton',label:'Budskapston (budskap vs lättsamt)',key:p=>[p.budskapston]},
                  {id:'teman',label:'Budskap-teman',key:p=>p.teman});
+}
+if(window.HAS_OCCASION){
+  DIMS.push({id:'hogtid',label:'Högtid / tillfälle',key:p=>p.hogtid?[p.hogtid]:[]});
 }
 
 const sortState = {};   // dimId -> {col, dir}
@@ -302,6 +306,7 @@ def main():
     org = [r for r in ana if is_organic(r)]
     boost = [r for r in ana if not is_organic(r)]
     has_tone = any(r.get("budskapston") for r in ana)
+    has_occasion = any(r.get("hogtid") for r in ana)
 
     ser_org = months(org)
     slope, verdict = trend(ser_org)
@@ -397,7 +402,8 @@ def main():
            f'<p class="muted">Filtrerat till ≥ {3000} visningar. Klicka för att '
            f'öppna på TikTok.</p><div id="rank"></div></section>'
            f'</div>'
-           f'<script>window.POSTS={data_js};window.HAS_TONE={str(has_tone).lower()};</script>'
+           f'<script>window.POSTS={data_js};window.HAS_TONE={str(has_tone).lower()};'
+           f'window.HAS_OCCASION={str(has_occasion).lower()};</script>'
            f'<script>{APP_JS}</script></body></html>')
     with open(OUT_HTML, "w", encoding="utf-8") as f:
         f.write(doc)

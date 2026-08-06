@@ -179,6 +179,17 @@ LLM-pass som lägger till `budskapston` (budskap vs lättsamt vs blandat),
 python classify_tone.py        # bara text, inga bilder – snabbt/billigt
 ```
 
+**Högtid/tillfälle (valfritt):** märk upp inlägg som rör en högtid (nyår, jul,
+midsommar, valborg, studenten, halloween, sommarlov, födelsedag, påsk,
+kräftskiva) via deterministisk nyckelordsmatchning:
+
+```bash
+python tag_occasions.py --dry   # visa träffar utan att skriva
+python tag_occasions.py         # lägg till kolumnen hogtid
+```
+
+`analyze.py` visar då "Högtid / tillfälle" som en egen benchmark-dimension.
+
 **2. Validera taggningen (rekommenderat före slutsatser):**
 
 ```bash
