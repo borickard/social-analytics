@@ -296,9 +296,16 @@ def safe_transcribe(path):
         return "", ""
 
 
+# Riktiga videoformat. En kvarbliven omslagsbild (.jpg) i videos/ – t.ex. när
+# yt-dlp bara kom åt omslaget för en otillgänglig video – ska INTE tas för en
+# videofil (då skulle inlägget "analyseras" från en enda stillbild).
+VIDEO_EXTS = (".mp4", ".webm", ".mov", ".mkv", ".m4v", ".avi", ".ts")
+
+
 def find_video(video_id):
-    """Hitta videofilen oavsett filändelse (.mp4/.webm ...)."""
-    hits = glob.glob(os.path.join(VIDEO_DIR, f"{video_id}.*"))
+    """Hitta videofilen (endast riktiga videoformat, inte omslagsbilder)."""
+    hits = [h for h in glob.glob(os.path.join(VIDEO_DIR, f"{video_id}.*"))
+            if os.path.splitext(h)[1].lower() in VIDEO_EXTS]
     return hits[0] if hits else None
 
 
