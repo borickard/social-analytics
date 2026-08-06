@@ -196,12 +196,20 @@ Styr med `IQ_VALIDATE_N`, `IQ_VALIDATE_SEED` och `IQ_VALIDATE_FILTER`
 python analyze.py              # skriver iq_tiktok_data/iq_analys.html + terminalsammanfattning
 ```
 
-Rapporten innehåller: översikt med riktmärken, engagemang **över tid** med
-trend (organiskt), **innehållsmix över tid**, och benchmarks per kategori,
-format/typ, hook, CTA, budskapston, budskap-tema, alkohol i bild samt boostat
-vs organiskt – plus topp/botten-listor. Boostade inlägg (`is_ad`) särredovisas
-i tidsanalysen. Kör `classify_tone.py` först så får du även ton- och
-hook-benchmarks.
+Rapporten är **interaktiv** (fristående HTML, inga beroenden):
+
+- **Segment-väljare** Alla / Organiskt / Boostat som filtrerar alla tabeller
+  (organiskt och boostat skiljer sig kraftigt i ER – jämför dem var för sig).
+- **Sorterbara kolumner** – klicka en rubrik för att sortera på median-ER,
+  medel-ER, visningar eller n.
+- **Klickbara kategorier** – klicka en rad för att fälla ut inläggen i den
+  gruppen (thumbnail + caption + ER + visningar); varje inlägg länkar till
+  originalet på TikTok.
+- Benchmarks per kategori, format/typ, hook, CTA, budskapston, budskap-tema och
+  alkohol; engagemang **över tid** med trend (organiskt); samt **starkast/svagast
+  inlägg separat för organiskt och boostat**.
+
+Kör `classify_tone.py` först så får du även ton- och hook-benchmarks.
 
 ## Förbehåll
 
