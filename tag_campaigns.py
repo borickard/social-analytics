@@ -41,7 +41,9 @@ CAMPAIGNS = {
         "hashtags": ["scenerurenfylla", "scenerurenfyllan", "scenerurfylla"],
     },
     "Ruset": {
-        "phrases": [],                       # "ruset" är för vanligt som fritext
+        # Bestämd form "ruset" är distinkt nog i IQ:s captions. Matchas som
+        # helt ord (ordgräns) så "bruset"/"kruset" o.d. inte råkar träffa.
+        "phrases": ["ruset"],
         "hashtags": ["ruset"],
     },
     "LiqLab": {
@@ -49,7 +51,7 @@ CAMPAIGNS = {
         "hashtags": ["liqlab", "liqlabb"],
     },
     "Skickat": {
-        "phrases": [],                       # "skickat" är för vanligt som fritext
+        "phrases": ["skickat"],
         "hashtags": ["skickat"],
     },
 }
@@ -78,8 +80,11 @@ def match_campaign(row):
     for name, cfg in CAMPAIGNS.items():
         if any(h.lower() in tags for h in cfg.get("hashtags", [])):
             return name
-        if any(p.lower() in haystack for p in cfg.get("phrases", [])):
-            return name
+        # Fraser matchas som hela ord (ordgräns) så delsträngar inte träffar
+        # (t.ex. "ruset" i "bruset").
+        for p in cfg.get("phrases", []):
+            if re.search(r"\b" + re.escape(p.lower()) + r"\b", haystack):
+                return name
     return ""
 
 
