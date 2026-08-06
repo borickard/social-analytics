@@ -44,16 +44,30 @@ CAMPAIGNS = {
         # Bestämd form "ruset" är distinkt nog i IQ:s captions. Matchas som
         # helt ord (ordgräns) så "bruset"/"kruset" o.d. inte råkar träffa.
         "phrases": ["ruset"],
-        "hashtags": ["ruset"],
+        "hashtags": ["ruset", "ruset2"],
     },
     "LiqLab": {
-        "phrases": ["liqlab", "liq lab", "liq-lab"],
+        # LiqLab (dejtingexperiment med artisten Felicia) nämns sällan vid namn.
+        # Auto-signaler där de finns; resten märks manuellt (se MANUAL_OVERRIDES
+        # och kampanj_overrides.csv nedan).
+        "phrases": ["liqlab", "liq lab", "liq-lab",
+                    "dejtingexperiment", "dejting-experiment", "dejting experiment",
+                    "felicia"],
         "hashtags": ["liqlab", "liqlabb"],
     },
     "Skickat": {
         "phrases": ["skickat"],
         "hashtags": ["skickat"],
     },
+}
+
+# Manuell märkning för inlägg som inte går att detektera på text (t.ex. LiqLab,
+# som sällan nämns i caption). Fyll på med video_id -> kampanjnamn. Har
+# företräde framför nyckelordsmatchningen. Du kan också lägga id:n i filen
+# iq_tiktok_data/kampanj_overrides.csv (kolumner: video_id,kampanj) – smidigt
+# för längre listor utan att röra koden.
+MANUAL_OVERRIDES = {
+    # "7412345678901234567": "LiqLab",
 }
 
 
@@ -69,8 +83,27 @@ def _listtext(v):
     return v
 
 
+def load_overrides():
+    """Läs in ev. kampanj_overrides.csv (video_id,kampanj) i MANUAL_OVERRIDES."""
+    path = os.path.join(os.path.dirname(CSV_PATH), "kampanj_overrides.csv")
+    if not os.path.exists(path):
+        return
+    with open(path, newline="", encoding="utf-8-sig") as f:
+        n = 0
+        for r in csv.DictReader(f):
+            vid = (r.get("video_id") or "").strip()
+            name = (r.get("kampanj") or "").strip()
+            if vid and name:
+                MANUAL_OVERRIDES[vid] = name
+                n += 1
+    print(f"Läste {n} manuella märkningar från {os.path.basename(path)}.")
+
+
 def match_campaign(row):
-    """Returnera kampanjnamn om raden matchar, annars ''."""
+    """Returnera (kampanjnamn, anledning). Tomt namn om ingen match."""
+    vid = row.get("video_id", "")
+    if vid in MANUAL_OVERRIDES:
+        return MANUAL_OVERRIDES[vid], "manuell"
     caption = (row.get("caption", "") or "").lower()
     bildtext = _listtext(row.get("text_i_bild", "")).lower()
     haystack = caption + " " + bildtext
@@ -78,14 +111,15 @@ def match_campaign(row):
     tags = set((row.get("hashtags", "") or "").lower().split())
     tags |= set(re.findall(r"#(\w+)", caption))
     for name, cfg in CAMPAIGNS.items():
-        if any(h.lower() in tags for h in cfg.get("hashtags", [])):
-            return name
+        for h in cfg.get("hashtags", []):
+            if h.lower() in tags:
+                return name, f"#{h.lower()}"
         # Fraser matchas som hela ord (ordgräns) så delsträngar inte träffar
         # (t.ex. "ruset" i "bruset").
         for p in cfg.get("phrases", []):
             if re.search(r"\b" + re.escape(p.lower()) + r"\b", haystack):
-                return name
-    return ""
+                return name, f"fras:{p}"
+    return "", ""
 
 
 def main():
@@ -97,24 +131,26 @@ def main():
     if not rows:
         sys.exit("Enriched-CSV:n är tom.")
 
+    load_overrides()
+
     hits = Counter()
     examples = {}
     for r in rows:
-        name = match_campaign(r)
+        name, reason = match_campaign(r)
         r["kampanj"] = name
         r["produktionsniva"] = "kampanj" if name else "always_on"
         if name:
             hits[name] += 1
             examples.setdefault(name, []).append(
-                (r.get("video_id", ""), (r.get("caption", "") or "")[:70]))
+                (r.get("video_id", ""), reason, (r.get("caption", "") or "")[:60]))
 
     total_kampanj = sum(hits.values())
     print(f"{len(rows)} inlägg. Kampanjträffar: {total_kampanj} "
           f"({len(rows)-total_kampanj} always_on)")
     for name in CAMPAIGNS:
         print(f"\n  {name}: {hits.get(name,0)} träffar")
-        for vid, cap in examples.get(name, [])[:5]:
-            print(f"     {vid}  {cap}")
+        for vid, reason, cap in examples.get(name, [])[:8]:
+            print(f"     {vid}  [{reason}]  {cap}")
     if not total_kampanj:
         print("\nInga träffar. Justera CAMPAIGNS (t.ex. fler hashtag-varianter) "
               "eller kontrollera hur kampanjerna taggas i captionen.")
