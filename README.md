@@ -179,21 +179,6 @@ LLM-pass som lägger till `budskapston` (budskap vs lättsamt vs blandat),
 python classify_tone.py        # bara text, inga bilder – snabbt/billigt
 ```
 
-**Kampanj vs always-on (valfritt):** IQ:s större kampanjer (byråproducerade, mer
-polerade – t.ex. "Scener ur en fylla", "Ruset", "LiqLab", "Skickat") skiljer sig
-från det löpande "always on"-innehållet. Märk upp dem via deterministisk
-nyckelordsmatchning (namn i caption/hashtags):
-
-```bash
-python tag_campaigns.py --dry   # visa träffar utan att skriva
-python tag_campaigns.py         # lägg till kolumnerna kampanj + produktionsniva
-```
-
-Justera listan `CAMPAIGNS` i skriptet vid behov. Distinkta namn matchas som fras;
-vanliga ord (ruset/skickat) matchas bara som hashtag för att undvika falska
-träffar. `analyze.py` särredovisar då kampanj vs always-on, och tidstrenden
-baseras på always-on så enstaka kampanjer inte snedvrider den.
-
 **2. Validera taggningen (rekommenderat före slutsatser):**
 
 ```bash
