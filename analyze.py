@@ -361,10 +361,19 @@ def main():
 
     org = [r for r in ana if is_organic(r)]
     has_tone = any(r.get("budskapston") for r in ana)
+    has_campaign = any(r.get("produktionsniva") for r in ana)
+
+    # Tidsanalysen baseras på det löpande innehållet: organiskt, och – om
+    # kampanjer är uppmärkta – bara always_on (kampanjer är sporadiska
+    # högproduktioner som annars stör trendlinjen).
+    base = org
+    if has_campaign:
+        base = [r for r in org if r.get("produktionsniva", "always_on") == "always_on"]
+    base_label = "organiskt always-on" if has_campaign else "organiskt"
 
     overall = statistics.median([r["_er"] for r in ana])
     bands = Counter(band(r["_er"]) for r in ana)
-    ser = months(org)
+    ser = months(base)
     slope, verdict = trend(ser)
 
     # ---- terminalsammanfattning ----
@@ -373,7 +382,7 @@ def main():
     print(f"Median viktad ER (alla): {pct(overall)}")
     for b in ("starkt (2 %+)", "normalt (0,5–2 %)", "svagt (<0,5 %)"):
         print(f"   {b}: {bands.get(b,0)}")
-    print(f"Trend (organiskt, median-ER/månad): {verdict}  "
+    print(f"Trend ({base_label}, median-ER/månad): {verdict}  "
           f"({slope:+.3f} procentenheter/månad)")
     print("\nBenchmark per kategori (organiskt, median ER):")
     for r in benchmark(org, single("kategori")):
@@ -405,7 +414,7 @@ def main():
         f'(is_ad) särredovisas i tidsanalysen (organiskt) men ingår i '
         f'kategoribenchmarks.</p>')))
 
-    blocks.append(sect("Engagemang över tid (organiskt)",
+    blocks.append(sect(f"Engagemang över tid ({base_label})",
                        svg_line(ser, "Median viktad ER per månad") +
                        f'<p>Trend: <strong>{_esc(verdict)}</strong> '
                        f'({slope:+.3f} procentenheter/månad).</p>'))
@@ -439,6 +448,14 @@ def main():
                            bench_table(benchmark(ana, single("budskapston")))))
         blocks.append(sect("Benchmark: budskap (teman)",
                            bench_table(benchmark(ana, listfield("budskap_teman")))))
+
+    if has_campaign:
+        blocks.append(sect("Kampanj vs always-on",
+                           svg_bars(benchmark(ana, single("produktionsniva"), min_n=1),
+                                    "Median ER: kampanj vs always-on") +
+                           bench_table(benchmark(ana, single("produktionsniva"), min_n=1))))
+        blocks.append(sect("Per kampanj (median ER)",
+                           bench_table(benchmark(ana, single("kampanj"), min_n=1))))
 
     blocks.append(sect("Benchmark: alkohol i bild",
                        bench_table(benchmark(
