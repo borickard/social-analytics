@@ -157,6 +157,41 @@ säkert splittbar.) Fri text (`tema`, `grafik_beskrivning`, `personer_i_bild`,
 Detektionstaxonomin (alkoholflaggorna) är lätt att utöka: lägg till fält i
 `VISION_SCHEMA` / `VISION_KEYS` i `iq_tiktok_content_pipeline.py`.
 
+## Analys (innehåll → engagemang)
+
+När datasetet är berikat kopplar två skript innehåll till resultat.
+
+**Engagemang** mäts som viktad engagemangsgrad, visad som procent:
+
+```
+ER = (likes + kommentarer×5 + delningar×10 + favoriter×5) / visningar
+```
+
+Riktmärken: **<0,5 % svagt · 0,5–2 % normalt · 2 %+ starkt**. Delningar väger
+tyngst, allt i relation till visningar. Exakta siffror (`*_exakt`) används där de
+finns. Median är huvudmått (robust mot virala extremvärden).
+
+**1. Ton & budskap (valfritt men rekommenderat)** – en billig text-baserad
+LLM-pass som lägger till `budskapston` (budskap vs lättsamt vs blandat),
+`budskap_teman` och en ren `har_hook`-flagga:
+
+```bash
+python classify_tone.py        # bara text, inga bilder – snabbt/billigt
+```
+
+**2. Analys & rapport:**
+
+```bash
+python analyze.py              # skriver iq_tiktok_data/iq_analys.html + terminalsammanfattning
+```
+
+Rapporten innehåller: översikt med riktmärken, engagemang **över tid** med
+trend (organiskt), **innehållsmix över tid**, och benchmarks per kategori,
+format/typ, hook, CTA, budskapston, budskap-tema, alkohol i bild samt boostat
+vs organiskt – plus topp/botten-listor. Boostade inlägg (`is_ad`) särredovisas
+i tidsanalysen. Kör `classify_tone.py` först så får du även ton- och
+hook-benchmarks.
+
 ## Förbehåll
 
 - Videor äldre än 365 dagar slutar uppdatera statistik hos TikTok (frysta siffror).
