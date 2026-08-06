@@ -265,6 +265,35 @@ def transcribe(path):
     return full, hook
 
 
+def has_audio(path):
+    """True om filen har en ljudkanal. Videor utan ljud går inte att
+    transkribera – då hoppar vi det steget i stället för att krascha."""
+    out = subprocess.run(
+        ["ffprobe", "-v", "quiet", "-print_format", "json", "-show_streams", path],
+        capture_output=True, text=True).stdout
+    try:
+        return any(s.get("codec_type") == "audio"
+                   for s in json.loads(out).get("streams", []))
+    except Exception:
+        return True   # osäkert → försök ändå
+
+
+def safe_transcribe(path):
+    """Transkribera utan att ett fel ska stoppa hela inlägget.
+
+    En del videor saknar ljudkanal (eller har trasigt ljud) och får då Whisper
+    att krascha (t.ex. 'tuple index out of range'). Sådana ska ändå få vision-
+    analys – vi returnerar bara tomt transkript och går vidare."""
+    if not has_audio(path):
+        print("  (ingen ljudkanal – hoppar transkribering)")
+        return "", ""
+    try:
+        return transcribe(path)
+    except Exception as e:
+        print(f"  ! transkribering misslyckades ({e}) – fortsätter utan transkript")
+        return "", ""
+
+
 def find_video(video_id):
     """Hitta videofilen oavsett filändelse (.mp4/.webm ...)."""
     hits = glob.glob(os.path.join(VIDEO_DIR, f"{video_id}.*"))
@@ -468,7 +497,7 @@ def main():
         try:
             if mp4:
                 meta = ffprobe(mp4)
-                transcript, hook = transcribe(mp4)
+                transcript, hook = safe_transcribe(mp4)
                 with tempfile.TemporaryDirectory() as tmp:
                     frames = extract_keyframes(mp4, tmp)
                     vision = call_vision(frames, transcript,
@@ -504,9 +533,10 @@ def main():
             consecutive_fails += 1
             if MAX_CONSECUTIVE_FAILS and consecutive_fails >= MAX_CONSECUTIVE_FAILS:
                 print(f"\nAvbryter: {consecutive_fails} inlägg i rad misslyckades "
-                      "– troligen ett pågående API-fel. Inget är förlorat (raderna "
-                      "sparades inte som klara). Kör skriptet igen senare så tas de "
-                      "kvarvarande inläggen om; redan klara hoppas över.")
+                      "– troligen ett pågående fel (API-överbelastning e.d.). Inget "
+                      "är förlorat (raderna sparades inte som klara). Kör skriptet "
+                      "igen senare så tas de kvarvarande inläggen om; redan klara "
+                      "hoppas över.")
                 break
     print(f"\nKlart: {OUT_CSV}\nUppskattad vision-kostnad: ~${est_cost():.2f}")
 
