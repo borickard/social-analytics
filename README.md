@@ -179,7 +179,18 @@ LLM-pass som lägger till `budskapston` (budskap vs lättsamt vs blandat),
 python classify_tone.py        # bara text, inga bilder – snabbt/billigt
 ```
 
-**2. Analys & rapport:**
+**2. Validera taggningen (rekommenderat före slutsatser):**
+
+```bash
+python validate_sample.py      # skriver iq_tiktok_data/iq_validering.html
+```
+
+Visar ett slumpurval inlägg med miniatyrbild + alla taggar + caption sida vid
+sida, så du snabbt kan ögna om kategori/budskapston/hook/alkoholflaggor stämmer.
+Styr med `IQ_VALIDATE_N`, `IQ_VALIDATE_SEED` och `IQ_VALIDATE_FILTER`
+(`alkohol`/`bild`/`budskap`).
+
+**3. Analys & rapport:**
 
 ```bash
 python analyze.py              # skriver iq_tiktok_data/iq_analys.html + terminalsammanfattning
