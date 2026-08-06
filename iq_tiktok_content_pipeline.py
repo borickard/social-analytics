@@ -121,9 +121,11 @@ VISION_SCHEMA = {
         },
         "kategori": {
             "type": "string",
-            "enum": ["gatuintervju", "faktatips", "forstahjalpen", "myt_vs_fakta",
-                     "personlig_berattelse", "quiz_lek", "ovrigt"],
-            "description": "Innehållstyp/kategori. Välj 'ovrigt' om inget passar.",
+            "enum": ["frågor på stan", "faktatips", "myt vs fakta",
+                     "personlig berättelse", "quiz/lek", "memes relaterbart",
+                     "dramatiserat", "övrigt"],
+            "description": "Innehållstyp/format (inte budskapet). Välj den som "
+                           "passar bäst. Undvik 'övrigt' i det längsta.",
         },
         "tema": {"type": "string", "description": "Kort ämnesetikett på svenska (fri text)."},
         "hook_typ": {

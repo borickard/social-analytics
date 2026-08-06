@@ -179,6 +179,19 @@ LLM-pass som lägger till `budskapston` (budskap vs lättsamt vs blandat),
 python classify_tone.py        # bara text, inga bilder – snabbt/billigt
 ```
 
+**Omkategorisering (vid behov):** om `kategori` ser fel ut (den ursprungliga
+vision-taggningen kunde missa) skriver detta om `kategori` med en förbättrad
+taxonomi utifrån omslagsbild + caption + transkript – billigt, ingen Whisper:
+
+```bash
+python reclassify_category.py          # återupptagbar; hoppar redan omgjorda
+IQ_RECLASS_FORCE=1 python reclassify_category.py   # kör om alla (ändrad taxonomi)
+```
+
+Taxonomi: frågor på stan · faktatips · myt vs fakta · personlig berättelse ·
+quiz/lek · memes relaterbart · dramatiserat · övrigt. (Nya inlägg via Ström B
+får samma taxonomi direkt.)
+
 **Högtid/tillfälle (valfritt):** märk upp inlägg som rör en högtid (nyår, jul,
 midsommar, valborg, studenten, halloween, sommarlov, födelsedag, påsk,
 kräftskiva) via deterministisk nyckelordsmatchning:
