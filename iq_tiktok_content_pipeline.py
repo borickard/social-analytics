@@ -16,8 +16,9 @@ Beroenden:
 VISION: call_vision() nedan är kopplad mot Claude (Messages API, structured
 outputs). Claude har stark svensk OCR/vision, vilket krävs för text i bild.
 Sätt din nyckel i miljövariabeln ANTHROPIC_API_KEY (eller kör `ant auth login`).
-Modell kan bytas via IQ_VISION_MODEL (default claude-opus-5). För kostnads-
-känsliga körningar över ~150 videor är claude-sonnet-5 ett billigare val.
+Standardmodell är claude-sonnet-5 (bra kvalitet, billigare, mindre risk för
+överbelastning). Byt vid behov via IQ_VISION_MODEL, t.ex. claude-opus-5 för
+högsta kvalitet.
 """
 
 import base64
@@ -41,8 +42,9 @@ IMAGE_DIR = os.path.join(DATA, "images")
 IN_CSV = os.path.join(DATA, "iq_tiktok_metrics.csv")
 OUT_CSV = os.path.join(DATA, "iq_tiktok_enriched.csv")
 
-# Vision-modell. claude-opus-5 = bäst kvalitet; claude-sonnet-5 = billigare.
-VISION_MODEL = os.environ.get("IQ_VISION_MODEL", "claude-opus-5")
+# Vision-modell. claude-sonnet-5 = standard (bra kvalitet, billigare, mindre
+# överbelastning); claude-opus-5 = högsta kvalitet. Byt via IQ_VISION_MODEL.
+VISION_MODEL = os.environ.get("IQ_VISION_MODEL", "claude-sonnet-5")
 
 # Whisper-modell för transkribering. large-v3 = bäst men långsam på CPU (Mac).
 # Sätt t.ex. IQ_WHISPER_MODEL=medium eller small för snabbare körning.

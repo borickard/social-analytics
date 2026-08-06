@@ -97,10 +97,10 @@ uppdateras, men videofiler som redan finns laddas inte ner på nytt.
 
 ```bash
 python iq_tiktok_content_pipeline.py
-# valfritt: billigare modell för stora körningar
-IQ_VISION_MODEL=claude-sonnet-5 python iq_tiktok_content_pipeline.py
+# standardmodell är claude-sonnet-5; för högsta kvalitet:
+IQ_VISION_MODEL=claude-opus-5 python iq_tiktok_content_pipeline.py
 # valfritt: bara foto-/karusellinlägg (kräver ingen Whisper – bra när
-# video-API:et strular eller för att komplettera datasetet)
+# API:et strular eller för att komplettera datasetet)
 IQ_ONLY_PHOTOS=1 python iq_tiktok_content_pipeline.py
 ```
 
