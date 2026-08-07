@@ -114,19 +114,23 @@ VISION_SCHEMA = {
     "properties": {
         "format": {
             "type": "string",
-            "enum": ["talking head", "voiceover + b-roll", "skärminspelning",
-                     "animerat/grafik", "bildinlägg", "övrigt"],
-            "description": "Övergripande format. 'skärminspelning' = faktisk "
-                           "inspelning av en skärm/app/chatt (INTE vanlig video "
-                           "med text-pålägg). 'bildinlägg' för foto/karusell.",
+            "enum": ["filmat", "animerat", "skärmavbildning", "voiceover",
+                     "talking head", "sketch", "bildinlägg", "övrigt"],
+            "description": "Videoformat, mest specifika: animerat; skärmavbildning "
+                           "(inspelning av skärm/app/chatt); talking head (person "
+                           "pratar in i kameran); sketch (skådespelat/komik); "
+                           "voiceover (berättarröst över filmat); filmat (annat "
+                           "filmat); bildinlägg (foto/karusell).",
         },
         "kategori": {
             "type": "string",
-            "enum": ["frågor på stan", "faktatips", "myt vs fakta",
-                     "personlig berättelse", "quiz/lek", "memes relaterbart",
+            "enum": ["fakta", "humor", "POV", "frågor på stan", "quiz/lek",
                      "dramatiserat", "övrigt"],
-            "description": "Innehållstyp/format (inte budskapet). Välj den som "
-                           "passar bäst. Undvik 'övrigt' i det längsta.",
+            "description": "Innehållstyp (inte budskapet). fakta; humor "
+                           "(memes/relaterbart); POV (verklig personlig "
+                           "berättelse); frågor på stan; quiz/lek; dramatiserat "
+                           "(ENDAST regisserat TV-drama, var restriktiv); "
+                           "övrigt (undvik). Välj den som passar bäst.",
         },
         "tema": {"type": "string", "description": "Kort ämnesetikett på svenska (fri text)."},
         "hook_typ": {

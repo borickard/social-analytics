@@ -43,21 +43,22 @@ def est_cost():
 
 # Läsbara svenska värden – blir samtidigt etiketter i rapporten.
 CATEGORIES = [
+    "fakta",
+    "humor",
+    "POV",
     "frågor på stan",
-    "faktatips",
-    "myt vs fakta",
-    "personlig berättelse",
     "quiz/lek",
-    "memes relaterbart",
     "dramatiserat",
     "övrigt",
 ]
 
 FORMATS = [
+    "filmat",
+    "animerat",
+    "skärmavbildning",
+    "voiceover",
     "talking head",
-    "voiceover + b-roll",
-    "skärminspelning",
-    "animerat/grafik",
+    "sketch",
     "bildinlägg",
     "övrigt",
 ]
@@ -74,7 +75,7 @@ SCHEMA = {
         "format": {
             "type": "string",
             "enum": FORMATS,
-            "description": "Övergripande videoformat.",
+            "description": "Videoformat – välj det mest specifika.",
         },
     },
     "required": ["kategori", "format"],
@@ -83,25 +84,29 @@ SCHEMA = {
 PROMPT = (
     "Du kategoriserar ett TikTok-inlägg från IQ (iqinitiativet), en svensk "
     "organisation för en smartare attityd till alkohol. Bedöm två saker: "
-    "innehållstyp (kategori) och videoformat.\n\n"
+    "innehållstyp (kategori) och format.\n\n"
     "KATEGORI (välj den som passar bäst, inte budskapet):\n"
+    "- fakta: fakta, tips, råd eller myt-mot-fakta om alkohol.\n"
+    "- humor: memes, skämt, relaterbara/underhållande vardagssituationer.\n"
+    "- POV: en person berättar en VERKLIG personlig historia/erfarenhet "
+    "(inte fiktion/skådespel).\n"
     "- frågor på stan: intervjuer/frågor med människor ute på stan.\n"
-    "- faktatips: fakta, tips eller råd (t.ex. 'tänk på detta', 'så här gör du').\n"
-    "- myt vs fakta: ställer en myt mot fakta.\n"
-    "- personlig berättelse: någon berättar en personlig historia/erfarenhet.\n"
     "- quiz/lek: quiz, lek eller uppmaning att svara/gissa.\n"
-    "- memes relaterbart: memes, skämt, relaterbara vardagssituationer.\n"
-    "- dramatiserat: skådespelat/scenariobaserat (t.ex. en dramatiserad scen).\n"
+    "- dramatiserat: skådespelat, regisserat innehåll som verkligen ser ut som "
+    "TV-DRAMA (filmatiskt berättande, som en dramaserie). Var RESTRIKTIV – välj "
+    "bara detta om det TYDLIGT är en dramaproduktion, INTE vanligt sociala "
+    "medier-innehåll och INTE en enkel sketch.\n"
     "- övrigt: BARA om inget annat rimligen passar. Undvik i det längsta.\n\n"
-    "FORMAT:\n"
-    "- talking head: en person pratar in i kameran.\n"
-    "- voiceover + b-roll: berättarröst över klipp/b-roll.\n"
-    "- skärminspelning: en FAKTISK inspelning av en telefon-/datorskärm, app, "
-    "chatt eller webbsida. Klassa INTE vanlig video med text-pålägg som "
-    "skärminspelning.\n"
-    "- animerat/grafik: animation eller grafik/text som bärande element.\n"
-    "- bildinlägg: stillbild(er)/foto/karusell (om inläggstypen är 'bild').\n"
-    "- övrigt: om inget annat passar.\n\n"
+    "FORMAT (välj det MEST specifika som passar):\n"
+    "- animerat: animation eller grafik som bärande element.\n"
+    "- skärmavbildning: inspelning/skärmdump av en skärm, app, chatt, webbsida.\n"
+    "- talking head: en person pratar rakt in i kameran (intervju eller berättelse).\n"
+    "- sketch: skådespelat/fejkat men underhållande (komik) – en uppspelad situation.\n"
+    "- voiceover: en berättarröst ligger pålagd ÖVER filmat material (rösten hörs, "
+    "ingen synkat talande person i bild).\n"
+    "- filmat: annat filmat material (b-roll, montage, filmade scener) som inte är "
+    "talking head, voiceover eller sketch.\n"
+    "- bildinlägg: stillbild(er)/foto/karusell (om inläggstypen är 'bild').\n\n"
     "Utgå från omslagsbilden (om den finns), captionen, transkriptet och texten "
     "i bild. Svara enligt strukturen."
 )
@@ -190,9 +195,14 @@ def main():
         fields.append("taxonomi_reclassad")
 
     # Bara analyserade inlägg (Ström B sätter 'format' på dem; skelettrader
-    # saknar det). 'format' läses här innan vi ev. skriver över det.
-    todo = [r for r in rows if r.get("format")
-            and (FORCE or r.get("taxonomi_reclassad") != "ja")]
+    # saknar det). En rad görs om om den inte är omgjord ännu ELLER om dess
+    # kategori/format inte längre finns i den aktuella taxonomin (dvs. listan
+    # har ändrats) – så en taxonomiändring triggar omkörning automatiskt.
+    def needs(r):
+        if FORCE or r.get("taxonomi_reclassad") != "ja":
+            return True
+        return r.get("kategori") not in CATEGORIES or r.get("format") not in FORMATS
+    todo = [r for r in rows if r.get("format") and needs(r)]
     if LIMIT:
         todo = todo[:LIMIT]
     done = sum(1 for r in rows if r.get("taxonomi_reclassad") == "ja")
