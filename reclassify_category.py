@@ -53,6 +53,15 @@ CATEGORIES = [
     "övrigt",
 ]
 
+FORMATS = [
+    "talking head",
+    "voiceover + b-roll",
+    "skärminspelning",
+    "animerat/grafik",
+    "bildinlägg",
+    "övrigt",
+]
+
 SCHEMA = {
     "type": "object",
     "additionalProperties": False,
@@ -60,16 +69,22 @@ SCHEMA = {
         "kategori": {
             "type": "string",
             "enum": CATEGORIES,
-            "description": "Innehållstyp/format. Välj den som passar BÄST.",
+            "description": "Innehållstyp. Välj den som passar BÄST.",
+        },
+        "format": {
+            "type": "string",
+            "enum": FORMATS,
+            "description": "Övergripande videoformat.",
         },
     },
-    "required": ["kategori"],
+    "required": ["kategori", "format"],
 }
 
 PROMPT = (
     "Du kategoriserar ett TikTok-inlägg från IQ (iqinitiativet), en svensk "
-    "organisation för en smartare attityd till alkohol. Välj EN innehållstyp "
-    "(format), inte budskapet. Definitioner:\n"
+    "organisation för en smartare attityd till alkohol. Bedöm två saker: "
+    "innehållstyp (kategori) och videoformat.\n\n"
+    "KATEGORI (välj den som passar bäst, inte budskapet):\n"
     "- frågor på stan: intervjuer/frågor med människor ute på stan.\n"
     "- faktatips: fakta, tips eller råd (t.ex. 'tänk på detta', 'så här gör du').\n"
     "- myt vs fakta: ställer en myt mot fakta.\n"
@@ -77,8 +92,16 @@ PROMPT = (
     "- quiz/lek: quiz, lek eller uppmaning att svara/gissa.\n"
     "- memes relaterbart: memes, skämt, relaterbara vardagssituationer.\n"
     "- dramatiserat: skådespelat/scenariobaserat (t.ex. en dramatiserad scen).\n"
-    "- övrigt: använd BARA om inget av ovanstående rimligen passar. "
-    "Undvik övrigt i det längsta – välj hellre den närmaste kategorin.\n"
+    "- övrigt: BARA om inget annat rimligen passar. Undvik i det längsta.\n\n"
+    "FORMAT:\n"
+    "- talking head: en person pratar in i kameran.\n"
+    "- voiceover + b-roll: berättarröst över klipp/b-roll.\n"
+    "- skärminspelning: en FAKTISK inspelning av en telefon-/datorskärm, app, "
+    "chatt eller webbsida. Klassa INTE vanlig video med text-pålägg som "
+    "skärminspelning.\n"
+    "- animerat/grafik: animation eller grafik/text som bärande element.\n"
+    "- bildinlägg: stillbild(er)/foto/karusell (om inläggstypen är 'bild').\n"
+    "- övrigt: om inget annat passar.\n\n"
     "Utgå från omslagsbilden (om den finns), captionen, transkriptet och texten "
     "i bild. Svara enligt strukturen."
 )
@@ -102,7 +125,8 @@ def _text_for(row):
             tib = " | ".join(str(x) for x in p)
     except Exception:
         pass
-    return (f"Caption:\n{row.get('caption','') or '(ingen)'}\n\n"
+    return (f"Inläggstyp: {row.get('typ','') or '?'}\n"
+            f"Caption:\n{row.get('caption','') or '(ingen)'}\n\n"
             f"Transkript:\n{row.get('transkript','') or '(inget tal)'}\n\n"
             f"Text i bild:\n{tib or '(ingen)'}")
 
@@ -140,10 +164,10 @@ def classify(row):
             text = next((b.text for b in resp.content if b.type == "text"), None)
             if not text:
                 raise RuntimeError("tomt svar")
-            kat = json.loads(text).get("kategori", "")
+            data = json.loads(text)
             USAGE["in"] += getattr(resp.usage, "input_tokens", 0) or 0
             USAGE["out"] += getattr(resp.usage, "output_tokens", 0) or 0
-            return kat
+            return data.get("kategori", ""), data.get("format", "")
         except Exception as e:
             retry = _is_transient(e) or isinstance(e, (json.JSONDecodeError, RuntimeError))
             if attempt < MAX_RETRIES and retry:
@@ -162,25 +186,28 @@ def main():
     if not rows:
         sys.exit("Enriched-CSV:n är tom.")
     fields = list(rows[0].keys())
-    if "kategori_reclassad" not in fields:
-        fields.append("kategori_reclassad")
+    if "taxonomi_reclassad" not in fields:
+        fields.append("taxonomi_reclassad")
 
+    # Bara analyserade inlägg (Ström B sätter 'format' på dem; skelettrader
+    # saknar det). 'format' läses här innan vi ev. skriver över det.
     todo = [r for r in rows if r.get("format")
-            and (FORCE or r.get("kategori_reclassad") != "ja")]
+            and (FORCE or r.get("taxonomi_reclassad") != "ja")]
     if LIMIT:
         todo = todo[:LIMIT]
-    done = sum(1 for r in rows if r.get("kategori_reclassad") == "ja")
-    print(f"{len(rows)} rader, {done} redan omkategoriserade. "
-          f"Kör {len(todo)} nu (modell: {MODEL}).")
+    done = sum(1 for r in rows if r.get("taxonomi_reclassad") == "ja")
+    print(f"{len(rows)} rader, {done} redan omgjorda. "
+          f"Kör {len(todo)} nu (kategori + format, modell: {MODEL}).")
 
     fails = 0
     for i, row in enumerate(todo, 1):
         vid = row.get("video_id", "")
         try:
-            kat = classify(row)
-            gammal = row.get("kategori", "")
+            kat, fmt = classify(row)
+            g_kat, g_fmt = row.get("kategori", ""), row.get("format", "")
             row["kategori"] = kat
-            row["kategori_reclassad"] = "ja"
+            row["format"] = fmt
+            row["taxonomi_reclassad"] = "ja"
             fails = 0
             tmp = CSV_PATH + ".tmp"
             with open(tmp, "w", newline="", encoding="utf-8-sig") as f:
@@ -188,8 +215,13 @@ def main():
                 w.writeheader()
                 w.writerows(rows)
             os.replace(tmp, CSV_PATH)
-            flag = "" if kat == gammal else f"  (var: {gammal})"
-            print(f"[{i}/{len(todo)}] {vid}: {kat}{flag}  ~${est_cost():.2f}")
+            ch = []
+            if kat != g_kat:
+                ch.append(f"kat var: {g_kat}")
+            if fmt != g_fmt:
+                ch.append(f"format var: {g_fmt}")
+            flag = ("  (" + "; ".join(ch) + ")") if ch else ""
+            print(f"[{i}/{len(todo)}] {vid}: {kat} / {fmt}{flag}  ~${est_cost():.2f}")
         except Exception as e:
             print(f"  ! fel på {vid}: {e}")
             fails += 1

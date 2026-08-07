@@ -132,28 +132,45 @@ def trend(series):
 def svg_line(series, title):
     if len(series) < 2:
         return f"<p><em>{title}: för få månader.</em></p>"
-    W, H, pad = 720, 240, 40
+    W, H = 760, 260
+    padl, padr, padt, padb = 52, 54, 14, 34
     ys = [v * 100 for _, v, _ in series]
     ymax = max(ys) * 1.15 or 1
-    def X(i): return pad + i * (W - pad * 2) / (len(series) - 1)
-    def Y(v): return H - pad - (v / ymax) * (H - pad * 2)
-    pts = " ".join(f"{X(i):.1f},{Y(v):.1f}" for i, v in enumerate(ys))
+    def X(i): return padl + i * (W - padl - padr) / (len(series) - 1)
+    def Y(v): return H - padb - (v / ymax) * (H - padt - padb)
+
+    # Y-axel: rutnätslinjer + %-etiketter på jämna steg (så värdena går att läsa).
+    ystep = 1 if ymax <= 6 else 2 if ymax <= 14 else 5
+    grid = ""
+    t = 0.0
+    while t <= ymax:
+        yy = Y(t)
+        grid += (f'<line x1="{padl}" y1="{yy:.1f}" x2="{W-padr}" y2="{yy:.1f}" '
+                 f'stroke="#8883" stroke-width="1"/>'
+                 f'<text x="{padl-8}" y="{yy+4:.1f}" text-anchor="end" '
+                 f'font-size="10" fill="#999">{str(t).rstrip("0").rstrip(".").replace(".", ",")} %</text>')
+        t += ystep
+
+    # Riktmärkeslinjer 0,5 % (svagt) och 2 % (starkt), tydligt markerade.
     guides = ""
-    for gy, gl in [(0.5, "0,5 %"), (2.0, "2 %")]:
+    for gy, gl, col in [(0.5, "0,5 %", "#c9622e"), (2.0, "2 %", "#2e7d5b")]:
         if gy <= ymax:
             yy = Y(gy)
-            guides += (f'<line x1="{pad}" y1="{yy:.1f}" x2="{W-pad}" y2="{yy:.1f}" '
-                       f'stroke="#aaa" stroke-dasharray="4 3"/>'
-                       f'<text x="{W-pad+2}" y="{yy+4:.1f}" font-size="10" fill="#999">{gl}</text>')
+            guides += (f'<line x1="{padl}" y1="{yy:.1f}" x2="{W-padr}" y2="{yy:.1f}" '
+                       f'stroke="{col}" stroke-dasharray="5 3" stroke-width="1.2"/>'
+                       f'<text x="{W-padr+3}" y="{yy+4:.1f}" font-size="10" fill="{col}">{gl}</text>')
+
+    pts = " ".join(f"{X(i):.1f},{Y(v):.1f}" for i, v in enumerate(ys))
     step = max(1, len(series) // 8)
-    xlab = "".join(f'<text x="{X(i):.1f}" y="{H-pad+16}" text-anchor="middle" '
+    xlab = "".join(f'<text x="{X(i):.1f}" y="{H-padb+16}" text-anchor="middle" '
                    f'font-size="10" fill="currentColor">{series[i][0]}</text>'
                    for i in range(0, len(series), step))
-    dots = "".join(f'<circle cx="{X(i):.1f}" cy="{Y(v):.1f}" r="2.5" fill="#3b6fb0"/>'
+    dots = "".join(f'<circle cx="{X(i):.1f}" cy="{Y(v):.1f}" r="2.6" fill="#3b6fb0">'
+                   f'<title>{series[i][0]}: {v:.2f} %</title></circle>'
                    for i, v in enumerate(ys))
     return (f'<h3>{title}</h3><svg viewBox="0 0 {W} {H}" width="100%" '
-            f'style="max-width:{W}px">{guides}<polyline points="{pts}" fill="none" '
-            f'stroke="#3b6fb0" stroke-width="2"/>{dots}{xlab}</svg>')
+            f'style="max-width:{W}px">{grid}{guides}<polyline points="{pts}" '
+            f'fill="none" stroke="#3b6fb0" stroke-width="2"/>{dots}{xlab}</svg>')
 
 
 # ---------------------------------------------------------- data för JS-appen ---

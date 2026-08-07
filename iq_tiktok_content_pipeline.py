@@ -114,10 +114,11 @@ VISION_SCHEMA = {
     "properties": {
         "format": {
             "type": "string",
-            "enum": ["talking_head", "voiceover_broll", "skarminspelning",
-                     "animerat", "bildinlagg", "ovrigt"],
-            "description": "Övergripande format. Använd 'bildinlagg' för "
-                           "foto-/karusellinlägg (stillbilder, ingen film).",
+            "enum": ["talking head", "voiceover + b-roll", "skärminspelning",
+                     "animerat/grafik", "bildinlägg", "övrigt"],
+            "description": "Övergripande format. 'skärminspelning' = faktisk "
+                           "inspelning av en skärm/app/chatt (INTE vanlig video "
+                           "med text-pålägg). 'bildinlägg' för foto/karusell.",
         },
         "kategori": {
             "type": "string",
