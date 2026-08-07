@@ -188,9 +188,11 @@ python reclassify_category.py          # återupptagbar; hoppar redan omgjorda
 IQ_RECLASS_FORCE=1 python reclassify_category.py   # kör om alla (ändrad taxonomi)
 ```
 
-Taxonomi: frågor på stan · faktatips · myt vs fakta · personlig berättelse ·
-quiz/lek · memes relaterbart · dramatiserat · övrigt. (Nya inlägg via Ström B
-får samma taxonomi direkt.)
+Skriver om både `kategori` och `format`. Kategori: fakta · humor · POV ·
+frågor på stan · quiz/lek · dramatiserat (endast regisserat TV-drama) · övrigt.
+Format: filmat · animerat · skärmavbildning · voiceover · talking head ·
+sketch · bildinlägg. En ändrad taxonomi triggar omkörning automatiskt. (Nya
+inlägg via Ström B får samma taxonomi direkt.)
 
 **Högtid/tillfälle (valfritt):** märk upp inlägg som rör en högtid (nyår, jul,
 midsommar, valborg, studenten, halloween, sommarlov, födelsedag, påsk,
