@@ -129,50 +129,6 @@ def trend(series):
     return slope, ("uppåt ↗" if slope > 0.03 else "nedåt ↘" if slope < -0.03 else "stabilt →")
 
 
-def svg_line(series, title):
-    if len(series) < 2:
-        return f"<p><em>{title}: för få månader.</em></p>"
-    W, H = 760, 260
-    padl, padr, padt, padb = 52, 54, 14, 34
-    ys = [v * 100 for _, v, _ in series]
-    ymax = max(ys) * 1.15 or 1
-    def X(i): return padl + i * (W - padl - padr) / (len(series) - 1)
-    def Y(v): return H - padb - (v / ymax) * (H - padt - padb)
-
-    # Y-axel: rutnätslinjer + %-etiketter på jämna steg (så värdena går att läsa).
-    ystep = 1 if ymax <= 6 else 2 if ymax <= 14 else 5
-    grid = ""
-    t = 0.0
-    while t <= ymax:
-        yy = Y(t)
-        grid += (f'<line x1="{padl}" y1="{yy:.1f}" x2="{W-padr}" y2="{yy:.1f}" '
-                 f'stroke="#8883" stroke-width="1"/>'
-                 f'<text x="{padl-8}" y="{yy+4:.1f}" text-anchor="end" '
-                 f'font-size="10" fill="#999">{str(t).rstrip("0").rstrip(".").replace(".", ",")} %</text>')
-        t += ystep
-
-    # Riktmärkeslinjer 0,5 % (svagt) och 2 % (starkt), tydligt markerade.
-    guides = ""
-    for gy, gl, col in [(0.5, "0,5 %", "#c9622e"), (2.0, "2 %", "#2e7d5b")]:
-        if gy <= ymax:
-            yy = Y(gy)
-            guides += (f'<line x1="{padl}" y1="{yy:.1f}" x2="{W-padr}" y2="{yy:.1f}" '
-                       f'stroke="{col}" stroke-dasharray="5 3" stroke-width="1.2"/>'
-                       f'<text x="{W-padr+3}" y="{yy+4:.1f}" font-size="10" fill="{col}">{gl}</text>')
-
-    pts = " ".join(f"{X(i):.1f},{Y(v):.1f}" for i, v in enumerate(ys))
-    step = max(1, len(series) // 8)
-    xlab = "".join(f'<text x="{X(i):.1f}" y="{H-padb+16}" text-anchor="middle" '
-                   f'font-size="10" fill="currentColor">{series[i][0]}</text>'
-                   for i in range(0, len(series), step))
-    dots = "".join(f'<circle cx="{X(i):.1f}" cy="{Y(v):.1f}" r="2.6" fill="#3b6fb0">'
-                   f'<title>{series[i][0]}: {v:.2f} %</title></circle>'
-                   for i, v in enumerate(ys))
-    return (f'<h3>{title}</h3><svg viewBox="0 0 {W} {H}" width="100%" '
-            f'style="max-width:{W}px">{grid}{guides}<polyline points="{pts}" '
-            f'fill="none" stroke="#3b6fb0" stroke-width="2"/>{dots}{xlab}</svg>')
-
-
 # ---------------------------------------------------------- data för JS-appen ---
 def post_json(r):
     vid = r.get("video_id", "")
@@ -292,7 +248,44 @@ function renderRank(){
     `<div><h3>Svagast – boostat</h3>${mk(bo,false)}</div></div>`;
 }
 
-function renderAll(){DIMS.forEach(renderDim);renderRank();}
+function monthsAgg(posts){
+  const m={};
+  posts.forEach(p=>{const d=(p.date||'').slice(0,7);if(d.length===7){(m[d]=m[d]||[]).push(p.er);}});
+  return Object.keys(m).sort().map(k=>[k,median(m[k]),m[k].length]);
+}
+function trendOf(series){
+  if(series.length<3)return[0,'för få månader'];
+  const pts=series.map((s,i)=>[i,s[1]*100]),n=pts.length;
+  const mx=pts.reduce((a,p)=>a+p[0],0)/n,my=pts.reduce((a,p)=>a+p[1],0)/n;
+  let nu=0,de=0;pts.forEach(p=>{nu+=(p[0]-mx)*(p[1]-my);de+=(p[0]-mx)**2;});
+  const sl=de?nu/de:0;
+  return[sl,sl>0.03?'uppåt ↗':sl<-0.03?'nedåt ↘':'stabilt →'];
+}
+function renderChart(){
+  const series=monthsAgg(segPosts());
+  const lbl={alla:'alla',org:'organiskt',boost:'boostat'}[segment];
+  document.getElementById('chart-title').textContent='Engagemang över tid ('+lbl+')';
+  const note=document.getElementById('chart-note');
+  if(series.length<2){document.getElementById('chart').innerHTML='<p class="muted">För få månader i detta segment.</p>';note.textContent='';return;}
+  const W=760,H=260,pl=52,pr=54,pt=14,pb=34;
+  const ys=series.map(s=>s[1]*100),ymax=Math.max(...ys)*1.15||1;
+  const X=i=>pl+i*(W-pl-pr)/(series.length-1),Y=v=>H-pb-(v/ymax)*(H-pt-pb);
+  let grid='',ystep=ymax<=6?1:ymax<=14?2:5;
+  for(let t=0;t<=ymax;t+=ystep){const y=Y(t);
+    grid+=`<line x1="${pl}" y1="${y}" x2="${W-pr}" y2="${y}" stroke="#8883"/>`+
+      `<text x="${pl-8}" y="${y+4}" text-anchor="end" font-size="10" fill="#999">${(''+t).replace('.',',')} %</text>`;}
+  let gu='';[[0.5,'0,5 %','#c9622e'],[2,'2 %','#2e7d5b']].forEach(g=>{if(g[0]<=ymax){const y=Y(g[0]);
+    gu+=`<line x1="${pl}" y1="${y}" x2="${W-pr}" y2="${y}" stroke="${g[2]}" stroke-dasharray="5 3" stroke-width="1.2"/>`+
+      `<text x="${W-pr+3}" y="${y+4}" font-size="10" fill="${g[2]}">${g[1]}</text>`;}});
+  const line=series.map((s,i)=>`${X(i).toFixed(1)},${Y(ys[i]).toFixed(1)}`).join(' ');
+  const st=Math.max(1,Math.floor(series.length/8));let xl='';
+  for(let i=0;i<series.length;i+=st)xl+=`<text x="${X(i).toFixed(1)}" y="${H-pb+16}" text-anchor="middle" font-size="10" fill="currentColor">${series[i][0]}</text>`;
+  const dots=series.map((s,i)=>`<circle cx="${X(i).toFixed(1)}" cy="${Y(ys[i]).toFixed(1)}" r="2.6" fill="#3b6fb0"><title>${s[0]}: ${ys[i].toFixed(2)} % (n=${s[2]})</title></circle>`).join('');
+  document.getElementById('chart').innerHTML=`<svg viewBox="0 0 ${W} ${H}" width="100%" style="max-width:${W}px">${grid}${gu}<polyline points="${line}" fill="none" stroke="#3b6fb0" stroke-width="2"/>${dots}${xl}</svg>`;
+  const tr=trendOf(series);
+  note.innerHTML=`Trend: <strong>${tr[1]}</strong> (${tr[0]>=0?'+':''}${tr[0].toFixed(3)} procentenheter/månad). Median-ER per månad, n per punkt vid hover.`;
+}
+function renderAll(){renderChart();DIMS.forEach(renderDim);renderRank();}
 
 document.addEventListener('click',e=>{
   const th=e.target.closest('th.sortable');
@@ -405,10 +398,9 @@ def main():
            '<label><input type="radio" name="seg" value="boost"> Boostat</label>'
            '<span class="muted">(filtrerar tabellerna nedan)</span></div>')
 
-    charts = (f'<section><h2>Engagemang över tid (organiskt)</h2>'
-              f'{svg_line(ser_org, "Median viktad ER per månad")}'
-              f'<p class="muted">Trend: <strong>{verdict}</strong> '
-              f'({slope:+.3f} procentenheter/månad).</p></section>')
+    # Tidsgrafen ritas av JS-appen (uppdateras med segment-väljaren).
+    charts = ('<section><h2 id="chart-title">Engagemang över tid</h2>'
+              '<div id="chart"></div><p id="chart-note" class="muted"></p></section>')
 
     doc = (f'<!doctype html><html lang="sv"><head><meta charset="utf-8">'
            f'<meta name="viewport" content="width=device-width,initial-scale=1">'
