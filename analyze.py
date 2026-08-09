@@ -272,16 +272,16 @@ function renderChart(){
   const X=i=>pl+i*(W-pl-pr)/(series.length-1),Y=v=>H-pb-(v/ymax)*(H-pt-pb);
   let grid='',ystep=ymax<=6?1:ymax<=14?2:5;
   for(let t=0;t<=ymax;t+=ystep){const y=Y(t);
-    grid+=`<line x1="${pl}" y1="${y}" x2="${W-pr}" y2="${y}" stroke="#8883"/>`+
-      `<text x="${pl-8}" y="${y+4}" text-anchor="end" font-size="10" fill="#999">${(''+t).replace('.',',')} %</text>`;}
-  let gu='';[[0.5,'0,5 %','#c9622e'],[2,'2 %','#2e7d5b']].forEach(g=>{if(g[0]<=ymax){const y=Y(g[0]);
+    grid+=`<line x1="${pl}" y1="${y}" x2="${W-pr}" y2="${y}" stroke="#e2ddd3"/>`+
+      `<text x="${pl-8}" y="${y+4}" text-anchor="end" font-size="10" fill="#8b857a">${(''+t).replace('.',',')} %</text>`;}
+  let gu='';[[0.5,'0,5 %','#c0562f'],[2,'2 %','#5f7d5c']].forEach(g=>{if(g[0]<=ymax){const y=Y(g[0]);
     gu+=`<line x1="${pl}" y1="${y}" x2="${W-pr}" y2="${y}" stroke="${g[2]}" stroke-dasharray="5 3" stroke-width="1.2"/>`+
       `<text x="${W-pr+3}" y="${y+4}" font-size="10" fill="${g[2]}">${g[1]}</text>`;}});
   const line=series.map((s,i)=>`${X(i).toFixed(1)},${Y(ys[i]).toFixed(1)}`).join(' ');
   const st=Math.max(1,Math.floor(series.length/8));let xl='';
   for(let i=0;i<series.length;i+=st)xl+=`<text x="${X(i).toFixed(1)}" y="${H-pb+16}" text-anchor="middle" font-size="10" fill="currentColor">${series[i][0]}</text>`;
-  const dots=series.map((s,i)=>`<circle cx="${X(i).toFixed(1)}" cy="${Y(ys[i]).toFixed(1)}" r="2.6" fill="#3b6fb0"><title>${s[0]}: ${ys[i].toFixed(2)} % (n=${s[2]})</title></circle>`).join('');
-  document.getElementById('chart').innerHTML=`<svg viewBox="0 0 ${W} ${H}" width="100%" style="max-width:${W}px">${grid}${gu}<polyline points="${line}" fill="none" stroke="#3b6fb0" stroke-width="2"/>${dots}${xl}</svg>`;
+  const dots=series.map((s,i)=>`<circle cx="${X(i).toFixed(1)}" cy="${Y(ys[i]).toFixed(1)}" r="2.8" fill="#c0562f"><title>${s[0]}: ${ys[i].toFixed(2)} % (n=${s[2]})</title></circle>`).join('');
+  document.getElementById('chart').innerHTML=`<svg viewBox="0 0 ${W} ${H}" width="100%" style="max-width:${W}px">${grid}${gu}<polyline points="${line}" fill="none" stroke="#18140f" stroke-width="2"/>${dots}${xl}</svg>`;
   const tr=trendOf(series);
   note.innerHTML=`Trend: <strong>${tr[1]}</strong> (${tr[0]>=0?'+':''}${tr[0].toFixed(3)} procentenheter/månad). Median-ER per månad, n per punkt vid hover.`;
 }
@@ -295,8 +295,10 @@ document.addEventListener('click',e=>{
   if(gr){const d=gr.dataset.dim,k=gr.dataset.k;const s=openState[d];
     s.has(k)?s.delete(k):s.add(k);renderDim(DIMS.find(x=>x.id===d));return;}
 });
-document.querySelectorAll('input[name=seg]').forEach(r=>r.addEventListener('change',e=>{
-  segment=e.target.value;renderAll();}));
+document.querySelectorAll('.pill[data-seg]').forEach(b=>b.addEventListener('click',e=>{
+  segment=e.currentTarget.dataset.seg;
+  document.querySelectorAll('.pill[data-seg]').forEach(x=>x.classList.toggle('active',x===e.currentTarget));
+  renderAll();}));
 
 // Bygg dimensions-sektionerna och rendera.
 const host=document.getElementById('dims');
@@ -342,42 +344,68 @@ def main():
     data_js = json.dumps(data, ensure_ascii=False).replace("</", "<\\/")
 
     css = """
-      :root{color-scheme:light dark}
-      body{font:15px/1.5 -apple-system,Segoe UI,Roboto,sans-serif;margin:0;
-        background:#fafafa;color:#1a1a1a}
-      @media(prefers-color-scheme:dark){body{background:#161616;color:#eaeaea}}
-      .wrap{max-width:920px;margin:0 auto;padding:26px 18px 90px}
-      h1{font-size:24px;margin:0 0 4px} h2{font-size:18px;margin:26px 0 8px}
-      h3{font-size:13px;color:#888;margin:14px 0 6px}
-      .muted{color:#888} a{color:inherit}
-      .cards{display:flex;gap:10px;flex-wrap:wrap;margin:12px 0}
-      .cards.col{flex-direction:column}
-      .stat{display:flex;gap:12px;flex-wrap:wrap;margin:12px 0}
-      .stat .c{background:#fff;border:1px solid #8882;border-radius:10px;padding:12px 14px}
-      @media(prefers-color-scheme:dark){.stat .c{background:#222}}
-      .stat .big{font-size:22px;font-weight:700}
-      .seg{position:sticky;top:0;background:#fafafaee;padding:10px 0;z-index:5;
-        backdrop-filter:blur(4px)}
-      @media(prefers-color-scheme:dark){.seg{background:#161616ee}}
-      .seg label{margin-right:14px;cursor:pointer}
-      table.bt{border-collapse:collapse;width:100%;font-size:13px}
-      table.bt th,table.bt td{padding:6px 9px;border-bottom:1px solid #8882;text-align:left}
-      table.bt th.v,table.bt td.v{text-align:right;white-space:nowrap}
-      th.sortable{cursor:pointer;user-select:none;color:#888;font-weight:600}
-      th.sortable:hover{color:inherit}
-      tr.grow{cursor:pointer} tr.grow:hover{background:#8881}
-      .drow td{background:#8880;padding:4px 9px 12px}
-      .pc{display:flex;gap:9px;width:290px;text-decoration:none;border:1px solid #8882;
-        border-radius:10px;padding:8px;background:#fff}
-      @media(prefers-color-scheme:dark){.pc{background:#1e1e1e}}
-      .cards.col .pc{width:100%}
-      .pc img{width:70px;height:92px;object-fit:cover;border-radius:6px;background:#8882;flex:0 0 auto}
-      .pcm{min-width:0} .pcer{font-weight:700} .pcc{font-size:12px;color:#888;margin-top:3px;
-        overflow:hidden;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical}
-      .badge{font-size:10px;padding:1px 6px;border-radius:8px;vertical-align:middle}
-      .badge.o{background:#4a9d7f33;color:#2e7d5b} .badge.b{background:#e0823d33;color:#b0632a}
-      .two{display:flex;gap:18px;flex-wrap:wrap} .two>div{flex:1;min-width:300px}
+      /* Stil inspirerad av playchipless.com: varmt cream, svart/rust, piller,
+         versala spärrade etiketter, mjukt rundade kort. */
+      :root{--bg:#efece6;--panel:#f7f5f1;--card:#fbfaf7;--ink:#18140f;
+        --muted:#8b857a;--line:#e2ddd3;--accent:#c0562f;--taupe:#8f8275}
+      *{box-sizing:border-box}
+      body{font:15px/1.55 "Helvetica Neue",Helvetica,Arial,-apple-system,system-ui,sans-serif;
+        margin:0;background:var(--bg);color:var(--ink);-webkit-font-smoothing:antialiased}
+      .wrap{max-width:940px;margin:0 auto;padding:36px 20px 100px}
+      h1{font-size:38px;line-height:1.03;letter-spacing:-.025em;font-weight:800;margin:0 0 8px}
+      @media(max-width:560px){h1{font-size:29px}}
+      h2{font-size:21px;letter-spacing:-.01em;font-weight:800;margin:32px 0 12px}
+      h3{font-size:11px;text-transform:uppercase;letter-spacing:.09em;color:var(--muted);
+        font-weight:700;margin:16px 0 8px}
+      .muted{color:var(--muted)} a{color:inherit}
+      /* nyckeltal-kort */
+      .stat{display:flex;gap:12px;flex-wrap:wrap;margin:18px 0 6px}
+      .stat .c{flex:1;min-width:150px;background:var(--panel);border:1px solid var(--line);
+        border-radius:18px;padding:16px 18px}
+      .stat .big{font-size:26px;font-weight:800;letter-spacing:-.02em;margin-bottom:2px}
+      .stat .muted{font-size:13px}
+      /* segment-piller */
+      .seg{position:sticky;top:0;z-index:5;display:flex;align-items:center;gap:8px;
+        flex-wrap:wrap;padding:12px 0;
+        background:linear-gradient(var(--bg),var(--bg) 72%,transparent)}
+      .seg .lbl{font-size:11px;text-transform:uppercase;letter-spacing:.09em;
+        color:var(--muted);font-weight:700;margin-right:2px}
+      .pill{border:1px solid var(--line);background:transparent;color:var(--ink);
+        border-radius:999px;padding:8px 16px;font:inherit;font-size:14px;font-weight:600;
+        cursor:pointer;transition:all .15s ease}
+      .pill:hover{border-color:var(--muted)}
+      .pill.active{background:var(--ink);color:#fff;border-color:var(--ink)}
+      /* tabeller */
       section{overflow-x:auto}
+      table.bt{border-collapse:collapse;width:100%;font-size:14px;background:var(--panel);
+        border:1px solid var(--line);border-radius:16px;overflow:hidden}
+      table.bt th,table.bt td{padding:11px 14px;text-align:left;
+        border-bottom:1px solid var(--line)}
+      table.bt tbody tr:last-child td{border-bottom:none}
+      table.bt th{font-size:11px;text-transform:uppercase;letter-spacing:.07em;
+        color:var(--muted);font-weight:700;background:var(--card)}
+      th.v,td.v{text-align:right;white-space:nowrap}
+      th.sortable{cursor:pointer;user-select:none} th.sortable:hover{color:var(--ink)}
+      tr.grow{cursor:pointer;transition:background .12s} tr.grow:hover{background:#0000000a}
+      td.muted{color:var(--muted)}
+      .drow td{background:#00000006;padding:6px 12px 14px}
+      /* inläggskort */
+      .cards{display:flex;gap:12px;flex-wrap:wrap;margin:10px 0}
+      .cards.col{flex-direction:column}
+      .pc{display:flex;gap:12px;width:300px;text-decoration:none;background:var(--card);
+        border:1px solid var(--line);border-radius:16px;padding:10px;
+        transition:transform .12s,box-shadow .12s}
+      .pc:hover{transform:translateY(-1px);box-shadow:0 6px 18px #0000000f}
+      .cards.col .pc{width:100%}
+      .pc img{width:66px;height:88px;object-fit:cover;border-radius:10px;
+        background:var(--line);flex:0 0 auto}
+      .pcm{min-width:0} .pcer{font-weight:800;font-size:15px;letter-spacing:-.01em}
+      .pcc{font-size:12.5px;color:var(--muted);margin-top:3px;overflow:hidden;
+        display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical}
+      .badge{font-size:10px;font-weight:700;padding:2px 8px;border-radius:999px;
+        vertical-align:middle;text-transform:uppercase;letter-spacing:.04em}
+      .badge.o{background:#5f7d5c22;color:#4a6647} .badge.b{background:#c0562f22;color:#a2481f}
+      .two{display:flex;gap:20px;flex-wrap:wrap} .two>div{flex:1;min-width:300px}
     """
     def stat(v, l):
         return f'<div class="c"><div class="big">{v}</div><div class="muted">{l}</div></div>'
@@ -392,11 +420,10 @@ def main():
               f'{stat(verdict,"trend organiskt")}'
               f'{stat(bands.get("starkt (2 %+)",0),"starka inlägg (2 %+)")}</div>')
 
-    seg = ('<div class="seg"><strong>Segment:</strong> '
-           '<label><input type="radio" name="seg" value="alla" checked> Alla</label>'
-           '<label><input type="radio" name="seg" value="org"> Organiskt</label>'
-           '<label><input type="radio" name="seg" value="boost"> Boostat</label>'
-           '<span class="muted">(filtrerar tabellerna nedan)</span></div>')
+    seg = ('<div class="seg"><span class="lbl">Segment</span>'
+           '<button class="pill active" data-seg="alla">Alla</button>'
+           '<button class="pill" data-seg="org">Organiskt</button>'
+           '<button class="pill" data-seg="boost">Boostat</button></div>')
 
     # Tidsgrafen ritas av JS-appen (uppdateras med segment-väljaren).
     charts = ('<section><h2 id="chart-title">Engagemang över tid</h2>'
