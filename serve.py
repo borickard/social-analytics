@@ -25,17 +25,41 @@ OVERRIDES = os.path.join(DATA, "overrides.csv")
 PORT = int(os.environ.get("IQ_PORT", "8000") or 8000)
 
 
+def read_overrides():
+    """Läs overrides.csv → {video_id: {field: value}}."""
+    ov = {}
+    if os.path.isfile(OVERRIDES):
+        with open(OVERRIDES, newline="", encoding="utf-8-sig") as f:
+            for r in csv.DictReader(f):
+                vid = (r.get("video_id") or "").strip()
+                fld = (r.get("field") or "").strip()
+                if vid and fld:
+                    ov.setdefault(vid, {})[fld] = r.get("value", "")
+    return ov
+
+
 class Handler(SimpleHTTPRequestHandler):
     def __init__(self, *a, **k):
         super().__init__(*a, directory=DATA, **k)
 
     def do_GET(self):
+        if self.path.split("?")[0].rstrip("/") == "/api/overrides":
+            self._send_json(read_overrides())
+            return
         if self.path in ("/", "/index.html"):
             self.path = "/iq_analys.html"
         return super().do_GET()
 
+    def _send_json(self, obj):
+        body = json.dumps(obj).encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
     def do_POST(self):
-        if self.path.rstrip("/") != "/__overrides":
+        if self.path.rstrip("/") != "/api/overrides":
             self.send_error(404)
             return
         try:

@@ -385,8 +385,9 @@ function saveEditor(){const p=POSTS.find(x=>x.id===editId);if(!p){closeEditor();
   document.querySelectorAll('#edFields select').forEach(sel=>{const f=sel.dataset.f,v=sel.value;
     if(v!==(p[f]||'')){OV[editId]=OV[editId]||{};OV[editId][f]=v;}});
   saveLS();applyOv();if(AUTOSAVE)postOverrides();updateOvBar();closeEditor();renderAll();}
+const OV_ENDPOINT='/api/overrides';
 function postOverrides(){
-  fetch('/__overrides',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(OV)})
+  fetch(OV_ENDPOINT,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(OV)})
     .then(r=>r.ok?r.json():Promise.reject()).then(()=>{const s=document.getElementById('ovstatus');if(s)s.textContent='sparat ✓';})
     .catch(()=>{const s=document.getElementById('ovstatus');if(s)s.textContent='kunde inte spara automatiskt – ladda ner i stället';});}
 function exportCsv(){let rows=[['video_id','field','value']];
@@ -433,6 +434,12 @@ DIMS.forEach(d=>{host.insertAdjacentHTML('beforeend',
   `<section><h2>${d.label}</h2><div id="dim-${d.id}"></div></section>`);});
 updateOvBar();
 renderAll();
+// När sajten serveras (serve.py lokalt eller Vercel): hämta molnets overrides
+// och lägg överst, så alla ser samma rättelser.
+if(AUTOSAVE){fetch(OV_ENDPOINT).then(r=>r.ok?r.json():{}).then(c=>{
+  if(c&&typeof c==='object'&&Object.keys(c).length){
+    for(const v in c)OV[v]=Object.assign(OV[v]||{},c[v]);
+    saveLS();applyOv();updateOvBar();renderAll();}}).catch(()=>{});}
 """
 
 
