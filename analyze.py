@@ -166,7 +166,7 @@ const esc = s => (s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;
 const median = a => {if(!a.length)return 0;const s=[...a].sort((x,y)=>x-y);const m=s.length>>1;return s.length%2?s[m]:(s[m-1]+s[m])/2;};
 const mean = a => a.length?a.reduce((x,y)=>x+y,0)/a.length:0;
 const MIN_N = 3, MIN_VIEWS = 3000;
-let segment = 'alla';
+let segment = 'boost';   // boostat är default (störst volym)
 
 // Datadrivna nivåer (kvartiler). Varje inläggs nivå bedöms mot SITT eget
 // segment (organiskt mot organiskt, boostat mot boostat) eftersom de skiljer
@@ -441,9 +441,9 @@ def main():
               f'{stat(str(len(org))+" / "+str(len(boost)),"organiska / boostade")}</div>')
 
     seg = ('<div class="seg"><span class="lbl">Segment</span>'
-           '<button class="pill active" data-seg="alla">Alla</button>'
+           '<button class="pill active" data-seg="boost">Boostat</button>'
            '<button class="pill" data-seg="org">Organiskt</button>'
-           '<button class="pill" data-seg="boost">Boostat</button></div>'
+           '<button class="pill" data-seg="alla">Alla</button></div>'
            '<p id="levels" class="muted"></p>')
 
     # Tidsgrafen ritas av JS-appen (uppdateras med segment-väljaren).
