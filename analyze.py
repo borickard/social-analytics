@@ -67,13 +67,17 @@ def is_organic(r):
     return str(r.get("is_ad", "")).strip().lower() not in ("true", "1", "ja")
 
 
-def band(er):
-    p = er * 100
-    if p >= 2:
-        return "starkt (2 %+)"
-    if p >= 0.5:
-        return "normalt (0,5–2 %)"
-    return "svagt (<0,5 %)"
+def levels(vals):
+    """Datadrivna nivågränser (kvartiler): (q1, median, q3). Under q1 = lågt,
+    över q3 = högt, däremellan = medel. Robust för små n."""
+    vals = [v for v in vals if v is not None]
+    if not vals:
+        return (0, 0, 0)
+    if len(vals) < 4:
+        m = statistics.median(vals)
+        return (m, m, m)
+    q1, q2, q3 = statistics.quantiles(vals, n=4)
+    return (q1, q2, q3)
 
 
 def pct(er):
@@ -164,6 +168,14 @@ const mean = a => a.length?a.reduce((x,y)=>x+y,0)/a.length:0;
 const MIN_N = 3, MIN_VIEWS = 3000;
 let segment = 'alla';
 
+// Datadrivna nivåer (kvartiler). Varje inläggs nivå bedöms mot SITT eget
+// segment (organiskt mot organiskt, boostat mot boostat) eftersom de skiljer
+// sig kraftigt. lågt < q1, högt > q3, annars medel.
+function quantile(s,p){if(!s.length)return 0;const i=(s.length-1)*p,lo=Math.floor(i),hi=Math.ceil(i);return lo===hi?s[lo]:s[lo]+(s[hi]-s[lo])*(i-lo);}
+function levelsOf(posts){const s=posts.map(p=>p.er).sort((a,b)=>a-b);return{q1:quantile(s,.25),med:quantile(s,.5),q3:quantile(s,.75)};}
+const ORG_L=levelsOf(POSTS.filter(p=>p.organic)),BOOST_L=levelsOf(POSTS.filter(p=>!p.organic));
+POSTS.forEach(p=>{const L=p.organic?ORG_L:BOOST_L;p.band=p.er>L.q3?'hög':(p.er<L.q1?'låg':'medel');});
+
 function segPosts(){return POSTS.filter(p=>segment==='alla'?true:segment==='org'?p.organic:!p.organic);}
 function hookKey(p){if(p.har_hook)return p.har_hook==='ja'?'hook':'ingen hook';
   if(!p.hook_typ)return '';return p.hook_typ==='ovrigt'?'ingen/oklar hook':'hook: '+p.hook_typ;}
@@ -230,8 +242,9 @@ function renderDim(dim){
 function card(p){
   return `<a class="pc" href="${esc(p.url)}" target="_blank" rel="noopener">`+
     `<img loading="lazy" src="${esc(p.thumb)}" alt="">`+
-    `<div class="pcm"><div class="pcer">${fmtPct(p.er)} `+
-    `<span class="badge ${p.organic?'o':'b'}">${p.organic?'org':'boost'}</span></div>`+
+    `<div class="pcm"><div class="pcer ${p.band==='hög'?'er-hi':p.band==='låg'?'er-lo':''}">${fmtPct(p.er)} `+
+    `<span class="badge ${p.organic?'o':'b'}">${p.organic?'org':'boost'}</span> `+
+    `<span class="lvl">${p.band}</span></div>`+
     `<div class="muted">${fmtNum(p.views)} visn. · ${esc(p.typ)}/${esc(p.kategori)} · ${esc(p.date)}</div>`+
     `<div class="pcc">${esc(p.caption)}</div></div></a>`;
 }
@@ -265,6 +278,9 @@ function renderChart(){
   const series=monthsAgg(segPosts());
   const lbl={alla:'alla',org:'organiskt',boost:'boostat'}[segment];
   document.getElementById('chart-title').textContent='Engagemang över tid ('+lbl+')';
+  const L=levelsOf(segPosts());
+  const lv=document.getElementById('levels');
+  if(lv)lv.innerHTML=`Nivåer för <b>${lbl}</b> (datadrivet, kvartiler): lågt &lt; ${fmtPct(L.q1)} · medel · högt &gt; ${fmtPct(L.q3)} — median ${fmtPct(L.med)}.`;
   const note=document.getElementById('chart-note');
   if(series.length<2){document.getElementById('chart').innerHTML='<p class="muted">För få månader i detta segment.</p>';note.textContent='';return;}
   const W=760,H=260,pl=52,pr=54,pt=14,pb=34;
@@ -274,7 +290,7 @@ function renderChart(){
   for(let t=0;t<=ymax;t+=ystep){const y=Y(t);
     grid+=`<line x1="${pl}" y1="${y}" x2="${W-pr}" y2="${y}" stroke="#e2ddd3"/>`+
       `<text x="${pl-8}" y="${y+4}" text-anchor="end" font-size="10" fill="#8b857a">${(''+t).replace('.',',')} %</text>`;}
-  let gu='';[[0.5,'0,5 %','#c0562f'],[2,'2 %','#5f7d5c']].forEach(g=>{if(g[0]<=ymax){const y=Y(g[0]);
+  let gu='';[[L.q1*100,'lågt','#c0562f'],[L.med*100,'median','#8f8275'],[L.q3*100,'högt','#5f7d5c']].forEach(g=>{if(g[0]>0&&g[0]<=ymax){const y=Y(g[0]);
     gu+=`<line x1="${pl}" y1="${y}" x2="${W-pr}" y2="${y}" stroke="${g[2]}" stroke-dasharray="5 3" stroke-width="1.2"/>`+
       `<text x="${W-pr+3}" y="${y+4}" font-size="10" fill="${g[2]}">${g[1]}</text>`;}});
   const line=series.map((s,i)=>`${X(i).toFixed(1)},${Y(ys[i]).toFixed(1)}`).join(' ');
@@ -322,19 +338,20 @@ def main():
 
     ser_org = months(org)
     slope, verdict = trend(ser_org)
-    med_all = statistics.median([r["_er"] for r in ana])
     med_org = statistics.median([r["_er"] for r in org]) if org else 0
     med_boost = statistics.median([r["_er"] for r in boost]) if boost else 0
-    bands = Counter(band(r["_er"]) for r in ana)
+    lo_org, md_org, hi_org = levels([r["_er"] for r in org])
+    lo_bo, md_bo, hi_bo = levels([r["_er"] for r in boost])
 
     # ---- terminal ----
     print(f"\nAnalyserade inlägg: {len(ana)}  (organiska: {len(org)}, "
           f"boostade: {len(boost)})")
-    print(f"Median viktad ER – alla: {pct(med_all)} | organiskt: {pct(med_org)} "
-          f"| boostat: {pct(med_boost)}")
-    for b in ("starkt (2 %+)", "normalt (0,5–2 %)", "svagt (<0,5 %)"):
-        print(f"   {b}: {bands.get(b,0)}")
-    print(f"Trend (organiskt): {verdict} ({slope:+.3f} pe/månad)")
+    print("\nNivåer (datadrivet ur den faktiska datan, kvartiler per segment):")
+    print(f"  ORGANISKT (n={len(org)}):  lågt < {pct(lo_org)}   "
+          f"medel {pct(lo_org)}–{pct(hi_org)} (median {pct(md_org)})   högt > {pct(hi_org)}")
+    print(f"  BOOSTAT   (n={len(boost)}):  lågt < {pct(lo_bo)}   "
+          f"medel {pct(lo_bo)}–{pct(hi_bo)} (median {pct(md_bo)})   högt > {pct(hi_bo)}")
+    print(f"\nTrend (organiskt): {verdict} ({slope:+.3f} pe/månad)")
     if not has_tone:
         print("(Obs: budskapston saknas – kör classify_tone.py för ton/hook.)")
     print(f"\nInteraktiv rapport: {OUT_HTML}")
@@ -400,6 +417,8 @@ def main():
       .pc img{width:66px;height:88px;object-fit:cover;border-radius:10px;
         background:var(--line);flex:0 0 auto}
       .pcm{min-width:0} .pcer{font-weight:800;font-size:15px;letter-spacing:-.01em}
+      .er-hi{color:#4a6647} .er-lo{color:#a2481f}
+      .lvl{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
       .pcc{font-size:12.5px;color:var(--muted);margin-top:3px;overflow:hidden;
         display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical}
       .badge{font-size:10px;font-weight:700;padding:2px 8px;border-radius:999px;
@@ -413,17 +432,19 @@ def main():
     header = (f'<h1>IQ TikTok – innehåll vs engagemang</h1>'
               f'<p class="muted">{len(ana)} analyserade inlägg. Viktad ER = '
               f'(likes + kommentarer×5 + delningar×10 + favoriter×5) / visningar. '
-              f'Median som huvudmått. Klicka en kategori för att se inläggen, '
-              f'klicka en kolumnrubrik för att sortera.</p>'
+              f'Nivåerna lågt/medel/högt beräknas datadrivet ur er faktiska data '
+              f'(kvartiler), separat för organiskt och boostat. Klicka en kategori '
+              f'för att se inläggen, en kolumnrubrik för att sortera.</p>'
               f'<div class="stat">{stat(pct(med_org),"median ER organiskt")}'
               f'{stat(pct(med_boost),"median ER boostat")}'
               f'{stat(verdict,"trend organiskt")}'
-              f'{stat(bands.get("starkt (2 %+)",0),"starka inlägg (2 %+)")}</div>')
+              f'{stat(str(len(org))+" / "+str(len(boost)),"organiska / boostade")}</div>')
 
     seg = ('<div class="seg"><span class="lbl">Segment</span>'
            '<button class="pill active" data-seg="alla">Alla</button>'
            '<button class="pill" data-seg="org">Organiskt</button>'
-           '<button class="pill" data-seg="boost">Boostat</button></div>')
+           '<button class="pill" data-seg="boost">Boostat</button></div>'
+           '<p id="levels" class="muted"></p>')
 
     # Tidsgrafen ritas av JS-appen (uppdateras med segment-väljaren).
     charts = ('<section><h2 id="chart-title">Engagemang över tid</h2>'
