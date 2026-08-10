@@ -237,6 +237,15 @@ Rapporten är **interaktiv** (fristående HTML, inga beroenden):
 
 Kör `classify_tone.py` först så får du även ton- och hook-benchmarks.
 
+**Manuella rättelser i dashboarden.** Feltaggat innehåll kan rättas direkt i
+rapporten: klicka **✎ ändra** på ett inläggskort, välj rätt kategori/format/
+ton/högtid/hook och spara. Ändringarna slår igenom direkt i tabeller och graf.
+Klicka sedan **Ladda ner overrides.csv** (baren längst ner), lägg filen i
+`iq_tiktok_data/overrides.csv` och kör `analyze.py` igen så blir de permanenta.
+Rättelserna ligger separat från `iq_tiktok_enriched.csv` och läggs alltid
+överst – så modellkörningar (`reclassify_category.py` m.fl.) kan aldrig skriva
+över dem.
+
 ## Förbehåll
 
 - Videor äldre än 365 dagar slutar uppdatera statistik hos TikTok (frysta siffror).

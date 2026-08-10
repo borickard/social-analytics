@@ -33,6 +33,23 @@ PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_CSV = os.path.join(PROJECT_DIR, "iq_tiktok_data", "iq_tiktok_enriched.csv")
 CSV_PATH = sys.argv[1] if len(sys.argv) > 1 else DEFAULT_CSV
 OUT_HTML = os.path.join(os.path.dirname(CSV_PATH) or ".", "iq_analys.html")
+# Manuella rättelser (video_id,field,value). Ligger separat från enriched.csv
+# och läggs ÖVERST – så modellkörningar (reclassify m.fl.) aldrig skriver över
+# dem. Skapas/uppdateras via "Ladda ner overrides.csv" i dashboarden.
+OVERRIDES_PATH = os.path.join(os.path.dirname(CSV_PATH) or ".", "overrides.csv")
+
+# Fält som går att ändra manuellt i dashboarden, med tillåtna värden. Nycklarna
+# måste matcha kolumnnamnen i enriched.csv (och POSTS-fälten i JS).
+EDITABLE = {
+    "kategori": ["fakta", "humor", "POV", "frågor på stan", "quiz/lek",
+                 "dramatiserat", "övrigt"],
+    "format": ["filmat", "animerat", "skärmavbildning", "voiceover",
+               "talking head", "sketch", "bildinlägg", "övrigt"],
+    "budskapston": ["", "budskap", "lattsamt", "blandat"],
+    "hogtid": ["", "Nyår", "Jul", "Midsommar", "Valborg", "Studenten",
+               "Halloween", "Sommarlov", "Födelsedag", "Påsk", "Kräftskiva"],
+    "har_hook": ["", "ja", "nej"],
+}
 
 
 # ----------------------------------------------------------------- inläsning ---
@@ -93,11 +110,28 @@ def parse_list(v):
         return []
 
 
-def load(path):
+def load_overrides():
+    """Läs overrides.csv → {video_id: {field: value}}. Tom om filen saknas."""
+    ov = {}
+    if os.path.exists(OVERRIDES_PATH):
+        with open(OVERRIDES_PATH, newline="", encoding="utf-8-sig") as f:
+            for r in csv.DictReader(f):
+                vid = (r.get("video_id") or "").strip()
+                fld = (r.get("field") or "").strip()
+                if vid and fld in EDITABLE:
+                    ov.setdefault(vid, {})[fld] = r.get("value", "")
+    return ov
+
+
+def load(path, ov):
     with open(path, newline="", encoding="utf-8-sig") as f:
         rows = list(csv.DictReader(f))
     ana = []
     for r in rows:
+        o = ov.get(r.get("video_id", ""))
+        if o:                                  # lägg manuella rättelser överst
+            for fld, val in o.items():
+                r[fld] = val
         if not r.get("format"):
             continue
         er = weighted_er(r)
@@ -240,13 +274,15 @@ function renderDim(dim){
 }
 
 function card(p){
-  return `<a class="pc" href="${esc(p.url)}" target="_blank" rel="noopener">`+
-    `<img loading="lazy" src="${esc(p.thumb)}" alt="">`+
+  const ovd=OV[p.id]?'<span class="ovmark">ändrad</span>':'';
+  return `<div class="pc">`+
+    `<a class="pcimg" href="${esc(p.url)}" target="_blank" rel="noopener"><img loading="lazy" src="${esc(p.thumb)}" alt=""></a>`+
     `<div class="pcm"><div class="pcer ${p.band==='hög'?'er-hi':p.band==='låg'?'er-lo':''}">${fmtPct(p.er)} `+
     `<span class="badge ${p.organic?'o':'b'}">${p.organic?'org':'boost'}</span> `+
-    `<span class="lvl">${p.band}</span></div>`+
-    `<div class="muted">${fmtNum(p.views)} visn. · ${esc(p.typ)}/${esc(p.kategori)} · ${esc(p.date)}</div>`+
-    `<div class="pcc">${esc(p.caption)}</div></div></a>`;
+    `<span class="lvl">${p.band}</span> ${ovd}`+
+    `<button class="editbtn" data-id="${esc(p.id)}" title="Ändra taggar">✎ ändra</button></div>`+
+    `<div class="muted">${fmtNum(p.views)} visn. · ${esc(p.typ)} / ${esc(p.kategori)} · ${esc(p.date)}</div>`+
+    `<a class="pcc" href="${esc(p.url)}" target="_blank" rel="noopener">${esc(p.caption)}</a></div></div>`;
 }
 
 function renderRank(){
@@ -321,7 +357,53 @@ function renderChart(){
 }
 function renderAll(){renderChart();DIMS.forEach(renderDim);renderRank();}
 
+/* ---- Manuella rättelser (overrides) -------------------------------------
+   OV = {video_id:{field:value}}. Seedas från overrides.csv (bakat i POSTS av
+   analyze + speglat i window.OVERRIDES) samt localStorage (osparade ändringar).
+   enriched.csv rörs aldrig. "Ladda ner overrides.csv" exporterar hela OV. */
+const LS_KEY='iq_overrides_'+POSTS.length;
+function loadLS(){try{return JSON.parse(localStorage.getItem(LS_KEY)||'{}')||{};}catch(e){return{};}}
+function saveLS(){try{localStorage.setItem(LS_KEY,JSON.stringify(OV));}catch(e){}}
+let OV={};
+(function(){const disk=window.OVERRIDES||{},ls=loadLS();
+  for(const v in disk)OV[v]=Object.assign({},disk[v]);
+  for(const v in ls)OV[v]=Object.assign(OV[v]||{},ls[v]);})();
+function applyOv(){POSTS.forEach(p=>{const o=OV[p.id];if(o)for(const f in o)p[f]=o[f];});}
+applyOv();
+
+let editId=null;
+function openEditor(id){editId=id;const p=POSTS.find(x=>x.id===id);if(!p)return;
+  document.getElementById('edCap').textContent=(p.caption||id).slice(0,90);
+  const box=document.getElementById('edFields');box.innerHTML='';
+  for(const f in window.EDITABLE){const cur=p[f]||'';
+    const opts=window.EDITABLE[f].map(v=>`<option value="${esc(v)}"${v===cur?' selected':''}>${esc(v||'(tom)')}</option>`).join('');
+    box.insertAdjacentHTML('beforeend',`<div><label>${f}</label><select data-f="${f}">${opts}</select></div>`);}
+  document.getElementById('editor').hidden=false;}
+function closeEditor(){document.getElementById('editor').hidden=true;editId=null;}
+function saveEditor(){const p=POSTS.find(x=>x.id===editId);if(!p){closeEditor();return;}
+  document.querySelectorAll('#edFields select').forEach(sel=>{const f=sel.dataset.f,v=sel.value;
+    if(v!==(p[f]||'')){OV[editId]=OV[editId]||{};OV[editId][f]=v;}});
+  saveLS();applyOv();updateOvBar();closeEditor();renderAll();}
+function exportCsv(){let rows=[['video_id','field','value']];
+  for(const v in OV)for(const f in OV[v])rows.push([v,f,OV[v][f]]);
+  const csv=rows.map(r=>r.map(c=>'"'+String(c).replace(/"/g,'""')+'"').join(',')).join('\n');
+  const blob=new Blob(['﻿'+csv],{type:'text/csv'}),url=URL.createObjectURL(blob),a=document.createElement('a');
+  a.href=url;a.download='overrides.csv';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
+function clearLocal(){if(!confirm('Rensa lokala (osparade) ändringar? Redan sparade i overrides.csv finns kvar efter att du kört analyze.py igen.'))return;
+  try{localStorage.removeItem(LS_KEY);}catch(e){}location.reload();}
+function updateOvBar(){const b=document.getElementById('ovbar');if(!b)return;const n=Object.keys(OV).length;
+  b.innerHTML=`<span><b>${n}</b> inlägg med manuella ändringar</span>`+
+    `<button class="pill dark" data-act="dl">⬇ Ladda ner overrides.csv</button>`+
+    `<button class="pill" data-act="clr">Rensa lokala</button>`+
+    `<span class="muted">Spara filen i iq_tiktok_data/ och kör <b>analyze.py</b> igen för att göra ändringarna permanenta.</span>`;}
+
 document.addEventListener('click',e=>{
+  const eb=e.target.closest('.editbtn');
+  if(eb){openEditor(eb.dataset.id);return;}
+  const act=e.target.closest('[data-act]');
+  if(act){if(act.dataset.act==='dl')exportCsv();else if(act.dataset.act==='clr')clearLocal();return;}
+  if(e.target.closest('#edSave')){saveEditor();return;}
+  if(e.target.closest('#edClose')||e.target.closest('#edCancel')||e.target.id==='editor'){closeEditor();return;}
   const th=e.target.closest('th.sortable');
   if(th){const d=th.dataset.dim,c=th.dataset.col;const st=sortState[d];
     if(st.col===c)st.dir*=-1;else{st.col=c;st.dir=(c==='k')?1:-1;}renderDim(DIMS.find(x=>x.id===d));return;}
@@ -338,6 +420,7 @@ document.querySelectorAll('.pill[data-seg]').forEach(b=>b.addEventListener('clic
 const host=document.getElementById('dims');
 DIMS.forEach(d=>{host.insertAdjacentHTML('beforeend',
   `<section><h2>${d.label}</h2><div id="dim-${d.id}"></div></section>`);});
+updateOvBar();
 renderAll();
 """
 
@@ -345,9 +428,13 @@ renderAll();
 def main():
     if not os.path.exists(CSV_PATH):
         sys.exit(f"Hittar inte {CSV_PATH}.")
-    ana = load(CSV_PATH)
+    ov = load_overrides()
+    ana = load(CSV_PATH, ov)
     if not ana:
         sys.exit("Inga analyserade rader med visningar hittades.")
+    if ov:
+        print(f"Tillämpar {sum(len(v) for v in ov.values())} manuella rättelser "
+              f"på {len(ov)} inlägg (overrides.csv).")
 
     org = [r for r in ana if is_organic(r)]
     boost = [r for r in ana if not is_organic(r)]
@@ -438,11 +525,39 @@ def main():
       .er-hi{color:#4a6647} .er-lo{color:#a2481f}
       .lvl{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
       .pcc{font-size:12.5px;color:var(--muted);margin-top:3px;overflow:hidden;
-        display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical}
+        text-decoration:none;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical}
+      .pcimg{flex:0 0 auto;line-height:0}
       .badge{font-size:10px;font-weight:700;padding:2px 8px;border-radius:999px;
         vertical-align:middle;text-transform:uppercase;letter-spacing:.04em}
       .badge.o{background:#5f7d5c22;color:#4a6647} .badge.b{background:#c0562f22;color:#a2481f}
       .two{display:flex;gap:20px;flex-wrap:wrap} .two>div{flex:1;min-width:300px}
+      /* redigering av taggar */
+      .editbtn{border:none;background:none;cursor:pointer;color:var(--muted);
+        font-size:11px;font-weight:600;padding:0 2px;margin-left:2px}
+      .editbtn:hover{color:var(--accent)}
+      .ovmark{font-size:10px;color:var(--accent);font-weight:700;
+        text-transform:uppercase;letter-spacing:.04em}
+      .modal{position:fixed;inset:0;background:#00000066;display:flex;
+        align-items:center;justify-content:center;z-index:50;padding:16px}
+      .modal[hidden]{display:none}
+      .sheet{background:var(--panel);border:1px solid var(--line);border-radius:20px;
+        padding:20px;max-width:420px;width:100%;box-shadow:0 24px 60px #00000030}
+      .mh{display:flex;justify-content:space-between;align-items:center}
+      .mh b{font-size:17px} .x{border:none;background:none;font-size:18px;
+        cursor:pointer;color:var(--muted)}
+      #edCap{font-size:13px;color:var(--muted);margin:6px 0 4px}
+      #edFields{display:flex;flex-direction:column;gap:12px;margin:14px 0}
+      #edFields label{font-size:11px;text-transform:uppercase;letter-spacing:.08em;
+        color:var(--muted);font-weight:700;display:block;margin-bottom:4px}
+      #edFields select{width:100%;padding:9px 10px;border:1px solid var(--line);
+        border-radius:10px;background:var(--card);font:inherit;font-size:14px;color:var(--ink)}
+      .mfoot{display:flex;justify-content:flex-end;gap:8px}
+      .pill.dark{background:var(--ink);color:#fff;border-color:var(--ink)}
+      .ovbar{position:fixed;left:0;right:0;bottom:0;background:var(--card);
+        border-top:1px solid var(--line);padding:9px 16px;display:flex;
+        align-items:center;gap:10px;flex-wrap:wrap;justify-content:center;
+        font-size:13px;z-index:20}
+      .ovbar .pill{padding:6px 12px;font-size:13px}
     """
     def stat(v, l):
         return f'<div class="c"><div class="big">{v}</div><div class="muted">{l}</div></div>'
@@ -468,6 +583,18 @@ def main():
     charts = ('<section><h2 id="chart-title">Engagemang över tid</h2>'
               '<div id="chart"></div><p id="chart-note" class="muted"></p></section>')
 
+    editor = ('<div id="editor" class="modal" hidden><div class="sheet">'
+              '<div class="mh"><b>Ändra taggar</b>'
+              '<button class="x" id="edClose">✕</button></div>'
+              '<div id="edCap"></div><div id="edFields"></div>'
+              '<div class="mfoot"><button class="pill" id="edCancel">Avbryt</button>'
+              '<button class="pill dark" id="edSave">Spara</button></div>'
+              '</div></div>')
+    ovbar = '<div class="ovbar" id="ovbar"></div>'
+
+    ov_js = json.dumps(ov, ensure_ascii=False).replace("</", "<\\/")
+    edit_js = json.dumps(EDITABLE, ensure_ascii=False).replace("</", "<\\/")
+
     doc = (f'<!doctype html><html lang="sv"><head><meta charset="utf-8">'
            f'<meta name="viewport" content="width=device-width,initial-scale=1">'
            f'<title>IQ TikTok – innehåll vs engagemang</title><style>{css}</style>'
@@ -476,9 +603,10 @@ def main():
            f'<section><h2>Starkast &amp; svagast (organiskt vs boostat)</h2>'
            f'<p class="muted">Filtrerat till ≥ {3000} visningar. Klicka för att '
            f'öppna på TikTok.</p><div id="rank"></div></section>'
-           f'</div>'
+           f'</div>{editor}{ovbar}'
            f'<script>window.POSTS={data_js};window.HAS_TONE={str(has_tone).lower()};'
-           f'window.HAS_OCCASION={str(has_occasion).lower()};</script>'
+           f'window.HAS_OCCASION={str(has_occasion).lower()};'
+           f'window.OVERRIDES={ov_js};window.EDITABLE={edit_js};</script>'
            f'<script>{APP_JS}</script></body></html>')
     with open(OUT_HTML, "w", encoding="utf-8") as f:
         f.write(doc)
