@@ -269,12 +269,16 @@ function quartersAgg(posts){
   return Object.keys(m).map(Number).sort((a,b)=>a-b).map(k=>[m[k].lbl,median(m[k].ers),m[k].ers.length]);
 }
 function trendOf(series){
-  if(series.length<3)return[0,'för få kvartal'];
+  // Linjär regression på kvartalens median-ER (i %). Domen är RELATIV: total
+  // förändring över perioden jämförs med nivån (medianen), så samma tröskel
+  // funkar för både organiskt (~3-5%) och boostat (~0,2%).
+  if(series.length<3)return{sl:0,total:0,verdict:'för få kvartal'};
   const pts=series.map((s,i)=>[i,s[1]*100]),n=pts.length;
   const mx=pts.reduce((a,p)=>a+p[0],0)/n,my=pts.reduce((a,p)=>a+p[1],0)/n;
   let nu=0,de=0;pts.forEach(p=>{nu+=(p[0]-mx)*(p[1]-my);de+=(p[0]-mx)**2;});
-  const sl=de?nu/de:0;
-  return[sl,sl>0.05?'uppåt ↗':sl<-0.05?'nedåt ↘':'stabilt →'];
+  const sl=de?nu/de:0, total=sl*(n-1), lvl=median(pts.map(p=>p[1]))||1;
+  const rel=total/lvl;
+  return{sl,total,verdict:rel>0.15?'uppåt ↗':rel<-0.15?'nedåt ↘':'stabilt →'};
 }
 function renderChart(){
   const series=quartersAgg(segPosts());
@@ -309,7 +313,9 @@ function renderChart(){
   const dots=series.map((s,i)=>`<circle cx="${X(i).toFixed(1)}" cy="${Y(ys[i]).toFixed(1)}" r="2.8" fill="#c0562f"><title>${s[0]}: ${ys[i].toFixed(2)} % (n=${s[2]})</title></circle>`).join('');
   document.getElementById('chart').innerHTML=`<svg viewBox="0 0 ${W} ${H}" width="100%" style="width:100%">${grid}${vl}${gu}<polyline points="${line}" fill="none" stroke="#18140f" stroke-width="2"/>${dots}${vlab}${xl}</svg>`;
   const tr=trendOf(series);
-  note.innerHTML=`Trend: <strong>${tr[1]}</strong> (${tr[0]>=0?'+':''}${tr[0].toFixed(3)} procentenheter/kvartal). Median-ER per kvartal, n per punkt vid hover.`;
+  const k=Math.min(3,series.length);
+  const early=median(series.slice(0,k).map(s=>s[1]*100)),recent=median(series.slice(-k).map(s=>s[1]*100));
+  note.innerHTML=`Trend: <strong>${tr.verdict}</strong> — linjär anpassning ${tr.sl>=0?'+':''}${tr.sl.toFixed(3)} pe/kvartal (≈ ${tr.total>=0?'+':''}${tr.total.toFixed(2)} pe över perioden). Tidiga kvartal median ${pctLbl(early)} → senaste ${pctLbl(recent)}.`;
 }
 function renderAll(){renderChart();DIMS.forEach(renderDim);renderRank();}
 
