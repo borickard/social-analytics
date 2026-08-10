@@ -315,7 +315,9 @@ function renderChart(){
   const tr=trendOf(series);
   const k=Math.min(3,series.length);
   const early=median(series.slice(0,k).map(s=>s[1]*100)),recent=median(series.slice(-k).map(s=>s[1]*100));
-  note.innerHTML=`Trend: <strong>${tr.verdict}</strong> — linjär anpassning ${tr.sl>=0?'+':''}${tr.sl.toFixed(3)} pe/kvartal (≈ ${tr.total>=0?'+':''}${tr.total.toFixed(2)} pe över perioden). Tidiga kvartal median ${pctLbl(early)} → senaste ${pctLbl(recent)}.`;
+  const chg=early?Math.round((recent-early)/early*100):0;
+  const dir=chg<0?`ungefär ${Math.abs(chg)} % lägre`:chg>0?`ungefär ${chg} % högre`:'på ungefär samma nivå';
+  note.innerHTML=`<strong>Trend: ${tr.verdict}</strong> Engagemanget per kvartal har gått från ${pctLbl(early)} i de tidiga kvartalen till ${pctLbl(recent)} i de senaste – ${dir}. Håll muspekaren på en punkt för antal inlägg det kvartalet.`;
 }
 function renderAll(){renderChart();DIMS.forEach(renderDim);renderRank();}
 
