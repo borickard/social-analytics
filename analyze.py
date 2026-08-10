@@ -261,45 +261,55 @@ function renderRank(){
     `<div><h3>Svagast – boostat</h3>${mk(bo,false)}</div></div>`;
 }
 
-function monthsAgg(posts){
+function quartersAgg(posts){
   const m={};
-  posts.forEach(p=>{const d=(p.date||'').slice(0,7);if(d.length===7){(m[d]=m[d]||[]).push(p.er);}});
-  return Object.keys(m).sort().map(k=>[k,median(m[k]),m[k].length]);
+  posts.forEach(p=>{const d=p.date||'';if(d.length>=7){const y=+d.slice(0,4),mo=+d.slice(5,7);
+    if(y&&mo){const q=((mo-1)/3|0)+1,key=y*10+q;
+      (m[key]=m[key]||{lbl:'Q'+q+'-'+String(y).slice(2),ers:[]}).ers.push(p.er);}}});
+  return Object.keys(m).map(Number).sort((a,b)=>a-b).map(k=>[m[k].lbl,median(m[k].ers),m[k].ers.length]);
 }
 function trendOf(series){
-  if(series.length<3)return[0,'för få månader'];
+  if(series.length<3)return[0,'för få kvartal'];
   const pts=series.map((s,i)=>[i,s[1]*100]),n=pts.length;
   const mx=pts.reduce((a,p)=>a+p[0],0)/n,my=pts.reduce((a,p)=>a+p[1],0)/n;
   let nu=0,de=0;pts.forEach(p=>{nu+=(p[0]-mx)*(p[1]-my);de+=(p[0]-mx)**2;});
   const sl=de?nu/de:0;
-  return[sl,sl>0.03?'uppåt ↗':sl<-0.03?'nedåt ↘':'stabilt →'];
+  return[sl,sl>0.05?'uppåt ↗':sl<-0.05?'nedåt ↘':'stabilt →'];
 }
 function renderChart(){
-  const series=monthsAgg(segPosts());
+  const series=quartersAgg(segPosts());
   const lbl={alla:'alla',org:'organiskt',boost:'boostat'}[segment];
-  document.getElementById('chart-title').textContent='Engagemang över tid ('+lbl+')';
+  document.getElementById('chart-title').textContent='Engagemang över tid ('+lbl+', per kvartal)';
   const L=levelsOf(segPosts());
   const lv=document.getElementById('levels');
   if(lv)lv.innerHTML=`Nivåer för <b>${lbl}</b> (datadrivet, kvartiler): lågt &lt; ${fmtPct(L.q1)} · medel · högt &gt; ${fmtPct(L.q3)} — median ${fmtPct(L.med)}.`;
   const note=document.getElementById('chart-note');
-  if(series.length<2){document.getElementById('chart').innerHTML='<p class="muted">För få månader i detta segment.</p>';note.textContent='';return;}
-  const W=760,H=260,pl=52,pr=54,pt=14,pb=34;
-  const ys=series.map(s=>s[1]*100),ymax=Math.max(...ys)*1.15||1;
+  if(series.length<2){document.getElementById('chart').innerHTML='<p class="muted">För få kvartal i detta segment.</p>';note.textContent='';return;}
+  const W=920,H=300,pl=54,pr=60,pt=24,pb=38;
+  const ys=series.map(s=>s[1]*100),ymax=Math.max(...ys)*1.18||1;
   const X=i=>pl+i*(W-pl-pr)/(series.length-1),Y=v=>H-pb-(v/ymax)*(H-pt-pb);
+  const pctLbl=v=>v.toFixed(2).replace('.',',')+' %';
+  // horisontellt rutnät + y-etiketter
   let grid='',ystep=ymax<=6?1:ymax<=14?2:5;
   for(let t=0;t<=ymax;t+=ystep){const y=Y(t);
     grid+=`<line x1="${pl}" y1="${y}" x2="${W-pr}" y2="${y}" stroke="#e2ddd3"/>`+
       `<text x="${pl-8}" y="${y+4}" text-anchor="end" font-size="10" fill="#8b857a">${(''+t).replace('.',',')} %</text>`;}
+  // vertikala linjer per kvartal (punkt → baslinje) + värde-etikett per punkt
+  let vl='',vlab='';
+  series.forEach((s,i)=>{const x=X(i),y=Y(ys[i]);
+    vl+=`<line x1="${x.toFixed(1)}" y1="${y.toFixed(1)}" x2="${x.toFixed(1)}" y2="${H-pb}" stroke="#d8d2c7" stroke-width="1"/>`;
+    vlab+=`<text x="${x.toFixed(1)}" y="${(y-9).toFixed(1)}" text-anchor="middle" font-size="9.5" fill="#18140f">${pctLbl(ys[i])}</text>`;});
+  // nivålinjer (lågt/median/högt)
   let gu='';[[L.q1*100,'lågt','#c0562f'],[L.med*100,'median','#8f8275'],[L.q3*100,'högt','#5f7d5c']].forEach(g=>{if(g[0]>0&&g[0]<=ymax){const y=Y(g[0]);
     gu+=`<line x1="${pl}" y1="${y}" x2="${W-pr}" y2="${y}" stroke="${g[2]}" stroke-dasharray="5 3" stroke-width="1.2"/>`+
-      `<text x="${W-pr+3}" y="${y+4}" font-size="10" fill="${g[2]}">${g[1]}</text>`;}});
+      `<text x="${W-pr+4}" y="${y+4}" font-size="10" fill="${g[2]}">${g[1]}</text>`;}});
   const line=series.map((s,i)=>`${X(i).toFixed(1)},${Y(ys[i]).toFixed(1)}`).join(' ');
-  const st=Math.max(1,Math.floor(series.length/8));let xl='';
-  for(let i=0;i<series.length;i+=st)xl+=`<text x="${X(i).toFixed(1)}" y="${H-pb+16}" text-anchor="middle" font-size="10" fill="currentColor">${series[i][0]}</text>`;
+  const st=Math.max(1,Math.ceil(series.length/20));let xl='';
+  for(let i=0;i<series.length;i+=st)xl+=`<text x="${X(i).toFixed(1)}" y="${H-pb+18}" text-anchor="middle" font-size="10" fill="currentColor">${series[i][0]}</text>`;
   const dots=series.map((s,i)=>`<circle cx="${X(i).toFixed(1)}" cy="${Y(ys[i]).toFixed(1)}" r="2.8" fill="#c0562f"><title>${s[0]}: ${ys[i].toFixed(2)} % (n=${s[2]})</title></circle>`).join('');
-  document.getElementById('chart').innerHTML=`<svg viewBox="0 0 ${W} ${H}" width="100%" style="max-width:${W}px">${grid}${gu}<polyline points="${line}" fill="none" stroke="#18140f" stroke-width="2"/>${dots}${xl}</svg>`;
+  document.getElementById('chart').innerHTML=`<svg viewBox="0 0 ${W} ${H}" width="100%" style="width:100%">${grid}${vl}${gu}<polyline points="${line}" fill="none" stroke="#18140f" stroke-width="2"/>${dots}${vlab}${xl}</svg>`;
   const tr=trendOf(series);
-  note.innerHTML=`Trend: <strong>${tr[1]}</strong> (${tr[0]>=0?'+':''}${tr[0].toFixed(3)} procentenheter/månad). Median-ER per månad, n per punkt vid hover.`;
+  note.innerHTML=`Trend: <strong>${tr[1]}</strong> (${tr[0]>=0?'+':''}${tr[0].toFixed(3)} procentenheter/kvartal). Median-ER per kvartal, n per punkt vid hover.`;
 }
 function renderAll(){renderChart();DIMS.forEach(renderDim);renderRank();}
 
