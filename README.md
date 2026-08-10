@@ -240,11 +240,24 @@ Kör `classify_tone.py` först så får du även ton- och hook-benchmarks.
 **Manuella rättelser i dashboarden.** Feltaggat innehåll kan rättas direkt i
 rapporten: klicka **✎ ändra** på ett inläggskort, välj rätt kategori/format/
 ton/högtid/hook och spara. Ändringarna slår igenom direkt i tabeller och graf.
-Klicka sedan **Ladda ner overrides.csv** (baren längst ner), lägg filen i
-`iq_tiktok_data/overrides.csv` och kör `analyze.py` igen så blir de permanenta.
-Rättelserna ligger separat från `iq_tiktok_enriched.csv` och läggs alltid
-överst – så modellkörningar (`reclassify_category.py` m.fl.) kan aldrig skriva
-över dem.
+Rättelserna ligger i `iq_tiktok_data/overrides.csv`, separat från
+`iq_tiktok_enriched.csv`, och läggs alltid överst – så modellkörningar
+(`reclassify_category.py` m.fl.) kan aldrig skriva över dem.
+
+Två sätt att spara ändringarna:
+
+```bash
+# A) Automatiskt (rekommenderas): kör dashboarden via en lokal server
+python analyze.py        # bygg rapporten
+python serve.py          # öppna sedan http://localhost:8000
+# varje ändring skrivs direkt till overrides.csv
+
+# B) Utan server: öppna filen direkt, klicka "Ladda ner overrides.csv",
+#    lägg den i iq_tiktok_data/ och kör analyze.py igen.
+```
+
+Kör `analyze.py` igen när du vill bygga om rapporten (t.ex. efter nytt
+skrap/analys) – overrides tillämpas alltid.
 
 ## Förbehåll
 

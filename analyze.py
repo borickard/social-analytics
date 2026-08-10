@@ -361,6 +361,7 @@ function renderAll(){renderChart();DIMS.forEach(renderDim);renderRank();}
    OV = {video_id:{field:value}}. Seedas från overrides.csv (bakat i POSTS av
    analyze + speglat i window.OVERRIDES) samt localStorage (osparade ändringar).
    enriched.csv rörs aldrig. "Ladda ner overrides.csv" exporterar hela OV. */
+const AUTOSAVE=location.protocol.indexOf('http')===0;  // serverad → spara direkt
 const LS_KEY='iq_overrides_'+POSTS.length;
 function loadLS(){try{return JSON.parse(localStorage.getItem(LS_KEY)||'{}')||{};}catch(e){return{};}}
 function saveLS(){try{localStorage.setItem(LS_KEY,JSON.stringify(OV));}catch(e){}}
@@ -383,7 +384,11 @@ function closeEditor(){document.getElementById('editor').hidden=true;editId=null
 function saveEditor(){const p=POSTS.find(x=>x.id===editId);if(!p){closeEditor();return;}
   document.querySelectorAll('#edFields select').forEach(sel=>{const f=sel.dataset.f,v=sel.value;
     if(v!==(p[f]||'')){OV[editId]=OV[editId]||{};OV[editId][f]=v;}});
-  saveLS();applyOv();updateOvBar();closeEditor();renderAll();}
+  saveLS();applyOv();if(AUTOSAVE)postOverrides();updateOvBar();closeEditor();renderAll();}
+function postOverrides(){
+  fetch('/__overrides',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(OV)})
+    .then(r=>r.ok?r.json():Promise.reject()).then(()=>{const s=document.getElementById('ovstatus');if(s)s.textContent='sparat ✓';})
+    .catch(()=>{const s=document.getElementById('ovstatus');if(s)s.textContent='kunde inte spara automatiskt – ladda ner i stället';});}
 function exportCsv(){let rows=[['video_id','field','value']];
   for(const v in OV)for(const f in OV[v])rows.push([v,f,OV[v][f]]);
   const csv=rows.map(r=>r.map(c=>'"'+String(c).replace(/"/g,'""')+'"').join(',')).join('\n');
@@ -392,10 +397,16 @@ function exportCsv(){let rows=[['video_id','field','value']];
 function clearLocal(){if(!confirm('Rensa lokala (osparade) ändringar? Redan sparade i overrides.csv finns kvar efter att du kört analyze.py igen.'))return;
   try{localStorage.removeItem(LS_KEY);}catch(e){}location.reload();}
 function updateOvBar(){const b=document.getElementById('ovbar');if(!b)return;const n=Object.keys(OV).length;
-  b.innerHTML=`<span><b>${n}</b> inlägg med manuella ändringar</span>`+
-    `<button class="pill dark" data-act="dl">⬇ Ladda ner overrides.csv</button>`+
-    `<button class="pill" data-act="clr">Rensa lokala</button>`+
-    `<span class="muted">Spara filen i iq_tiktok_data/ och kör <b>analyze.py</b> igen för att göra ändringarna permanenta.</span>`;}
+  if(AUTOSAVE){
+    b.innerHTML=`<span><b>${n}</b> inlägg med manuella ändringar</span>`+
+      `<span class="muted" id="ovstatus">sparas automatiskt till overrides.csv</span>`+
+      `<button class="pill" data-act="dl">Ladda ner kopia</button>`;
+  }else{
+    b.innerHTML=`<span><b>${n}</b> inlägg med manuella ändringar</span>`+
+      `<button class="pill dark" data-act="dl">⬇ Ladda ner overrides.csv</button>`+
+      `<button class="pill" data-act="clr">Rensa lokala</button>`+
+      `<span class="muted">Spara filen i iq_tiktok_data/ och kör <b>analyze.py</b> igen. `+
+      `(Tips: kör <b>serve.py</b> så sparas ändringar automatiskt.)</span>`;}}
 
 document.addEventListener('click',e=>{
   const eb=e.target.closest('.editbtn');
