@@ -41,6 +41,7 @@ OVERRIDES_PATH = os.path.join(os.path.dirname(CSV_PATH) or ".", "overrides.csv")
 # Fält som går att ändra manuellt i dashboarden, med tillåtna värden. Nycklarna
 # måste matcha kolumnnamnen i enriched.csv (och POSTS-fälten i JS).
 EDITABLE = {
+    "strategi": ["always on", "kampanj"],
     "typ": ["", "video", "bild"],
     "kategori": ["fakta", "humor", "POV", "frågor på stan", "quiz/lek",
                  "dramatiserat", "övrigt"],
@@ -187,6 +188,7 @@ def post_json(r):
         "alk": r.get("alkohol_i_bild", "") or "?",
         "alkkontext": r.get("alkohol_kontext", "") or "ingen",
         "hogtid": r.get("hogtid", ""),
+        "strategi": r.get("strategi", "") or "always on",
         "organic": is_organic(r),
         "er": round(r["_er"], 6),
         "views": int(r["_views"]),
@@ -216,6 +218,7 @@ function hookKey(p){if(p.har_hook)return p.har_hook==='ja'?'hook':'ingen hook';
   if(!p.hook_typ)return '';return p.hook_typ==='ovrigt'?'ingen/oklar hook':'hook: '+p.hook_typ;}
 
 const DIMS = [
+  {id:'strategi',label:'Strategi (kampanj / always on)',key:p=>[p.strategi]},
   {id:'kategori',label:'Kategori',key:p=>[p.kategori]},
   {id:'format',label:'Format',key:p=>[p.format]},
   {id:'typ',label:'Typ (video/bild)',key:p=>[p.typ]},
