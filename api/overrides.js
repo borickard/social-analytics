@@ -2,8 +2,19 @@
 // inbyggda KV (Redis/Upstash) via dess REST-API. Miljövariablerna injiceras
 // automatiskt när du kopplar en KV-store till projektet (Storage → Connect).
 const KEY = 'iq_overrides';
-const REST_URL = process.env.KV_REST_API_URL || process.env.UPSTASH_REDIS_REST_URL;
-const REST_TOKEN = process.env.KV_REST_API_TOKEN || process.env.UPSTASH_REDIS_REST_TOKEN;
+// Hitta KV-nycklarna oavsett vilket prefix Vercel/Upstash-storen fick
+// (KV_..., UPSTASH_..., STORAGE_... etc). Vi tar första env-variabeln som
+// slutar på _REST_API_URL respektive _REST_API_TOKEN.
+function findEnv(suffix) {
+  for (const k of Object.keys(process.env)) {
+    if (k.endsWith(suffix)) return process.env[k];
+  }
+  return undefined;
+}
+const REST_URL = process.env.KV_REST_API_URL || process.env.UPSTASH_REDIS_REST_URL
+  || findEnv('_REST_API_URL');
+const REST_TOKEN = process.env.KV_REST_API_TOKEN || process.env.UPSTASH_REDIS_REST_TOKEN
+  || findEnv('_REST_API_TOKEN');
 
 module.exports = async (req, res) => {
   if (!REST_URL || !REST_TOKEN) {
