@@ -41,6 +41,7 @@ OVERRIDES_PATH = os.path.join(os.path.dirname(CSV_PATH) or ".", "overrides.csv")
 # Fält som går att ändra manuellt i dashboarden, med tillåtna värden. Nycklarna
 # måste matcha kolumnnamnen i enriched.csv (och POSTS-fälten i JS).
 EDITABLE = {
+    "typ": ["", "video", "bild"],
     "kategori": ["fakta", "humor", "POV", "frågor på stan", "quiz/lek",
                  "dramatiserat", "övrigt"],
     "format": ["filmat", "animerat", "skärmavbildning", "voiceover",
