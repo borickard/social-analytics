@@ -1,0 +1,8 @@
+# Vercel ska bara deploya dashboarden: public/ (statiskt), api/*.js (Node) och
+# middleware.js. Python-skripten är lokala verktyg – uteslut dem så att Vercel
+# inte försöker bygga ett Python-projekt (requirements.txt triggar annars det).
+*.py
+requirements.txt
+__pycache__/
+iq_tiktok_data/
+iq_tiktok_chrome_profil/
