@@ -15,5 +15,12 @@ frames/
 iq_tiktok_metrics.csv
 iq_tiktok_enriched.csv
 
+# Business Manager-exporter (rådata – ska inte i repot)
+Video(*.csv
+studio_export.csv
+
+# macOS
+.DS_Store
+
 # Hemligheter
 .env
