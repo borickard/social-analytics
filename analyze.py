@@ -356,7 +356,18 @@ function renderChart(){
   const dir=chg<0?`ungefär ${Math.abs(chg)} % lägre`:chg>0?`ungefär ${chg} % högre`:'på ungefär samma nivå';
   note.innerHTML=`<strong>Trend: ${tr.verdict}</strong> Engagemanget per kvartal har gått från ${pctLbl(early)} i de tidiga kvartalen till ${pctLbl(recent)} i de senaste – ${dir}. Håll muspekaren på en punkt för antal inlägg det kvartalet.`;
 }
-function renderAll(){renderChart();DIMS.forEach(renderDim);renderRank();}
+function renderOverridden(){
+  const el=document.getElementById('overridden');if(!el)return;
+  const posts=Object.keys(OV).map(id=>POSTS.find(p=>p.id===id)).filter(Boolean);
+  const head=document.getElementById('ovhead');
+  if(head)head.textContent='Manuellt ändrade ('+posts.length+')';
+  if(!posts.length){el.innerHTML='<p class="muted">Inga manuella ändringar än. Klicka ✎ ändra på ett inlägg för att rätta en tagg.</p>';return;}
+  el.innerHTML='<div class="cards col">'+posts.map(p=>{
+    const ch=Object.entries(OV[p.id]).map(([f,v])=>`${esc(f)} → <b>${esc(v||'(tom)')}</b>`).join(' · ');
+    return `<div class="ovitem">${card(p)}<div class="ovchg">Ändrat: ${ch}</div></div>`;
+  }).join('')+'</div>';
+}
+function renderAll(){renderChart();renderOverridden();DIMS.forEach(renderDim);renderRank();}
 
 /* ---- Manuella rättelser (overrides) -------------------------------------
    OV = {video_id:{field:value}}. Seedas från overrides.csv (bakat i POSTS av
@@ -401,8 +412,8 @@ function clearLocal(){if(!confirm('Rensa lokala (osparade) ändringar? Redan spa
 function updateOvBar(){const b=document.getElementById('ovbar');if(!b)return;const n=Object.keys(OV).length;
   if(AUTOSAVE){
     b.innerHTML=`<span><b>${n}</b> inlägg med manuella ändringar</span>`+
-      `<span class="muted" id="ovstatus">sparas automatiskt till overrides.csv</span>`+
-      `<button class="pill" data-act="dl">Ladda ner kopia</button>`;
+      `<span class="muted" id="ovstatus">ändringar sparas automatiskt</span>`+
+      `<button class="pill" data-act="dl">Ladda ner kopia (csv)</button>`;
   }else{
     b.innerHTML=`<span><b>${n}</b> inlägg med manuella ändringar</span>`+
       `<button class="pill dark" data-act="dl">⬇ Ladda ner overrides.csv</button>`+
@@ -550,6 +561,8 @@ def main():
         vertical-align:middle;text-transform:uppercase;letter-spacing:.04em}
       .badge.o{background:#5f7d5c22;color:#4a6647} .badge.b{background:#c0562f22;color:#a2481f}
       .two{display:flex;gap:20px;flex-wrap:wrap} .two>div{flex:1;min-width:300px}
+      .ovitem{margin-bottom:10px}
+      .ovchg{font-size:12px;color:var(--accent);margin:4px 0 0 78px;font-weight:600}
       /* redigering av taggar */
       .editbtn{border:none;background:none;cursor:pointer;color:var(--muted);
         font-size:11px;font-weight:600;padding:0 2px;margin-left:2px}
@@ -618,6 +631,8 @@ def main():
            f'<meta name="viewport" content="width=device-width,initial-scale=1">'
            f'<title>IQ TikTok – innehåll vs engagemang</title><style>{css}</style>'
            f'</head><body><div class="wrap">{header}{seg}{charts}'
+           f'<section><h2 id="ovhead">Manuellt ändrade</h2>'
+           f'<div id="overridden"></div></section>'
            f'<div id="dims"></div>'
            f'<section><h2>Starkast &amp; svagast (organiskt vs boostat)</h2>'
            f'<p class="muted">Filtrerat till ≥ {3000} visningar. Klicka för att '
