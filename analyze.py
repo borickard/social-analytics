@@ -361,13 +361,17 @@ function renderChart(){
 }
 function renderOverridden(){
   const el=document.getElementById('overridden');if(!el)return;
-  const posts=Object.keys(OV).map(id=>POSTS.find(p=>p.id===id)).filter(Boolean);
+  // Visa bara riktiga taggrättelser – hoppa över rena strategi-ändringar
+  // (kampanj-taggning) så listan inte blir jättelång.
+  const items=Object.keys(OV).map(id=>({p:POSTS.find(x=>x.id===id),
+      ch:Object.entries(OV[id]).filter(e=>e[0]!=='strategi')}))
+    .filter(o=>o.p&&o.ch.length);
   const head=document.getElementById('ovhead');
-  if(head)head.textContent='Manuellt ändrade ('+posts.length+')';
-  if(!posts.length){el.innerHTML='<p class="muted">Inga manuella ändringar än. Klicka ✎ ändra på ett inlägg för att rätta en tagg.</p>';return;}
-  el.innerHTML='<div class="cards col">'+posts.map(p=>{
-    const ch=Object.entries(OV[p.id]).map(([f,v])=>`${esc(f)} → <b>${esc(v||'(tom)')}</b>`).join(' · ');
-    return `<div class="ovitem">${card(p)}<div class="ovchg">Ändrat: ${ch}</div></div>`;
+  if(head)head.textContent='Manuellt ändrade ('+items.length+')';
+  if(!items.length){el.innerHTML='<p class="muted">Inga manuella taggrättelser än (kampanj-taggning räknas inte här).</p>';return;}
+  el.innerHTML='<div class="cards col">'+items.map(o=>{
+    const ch=o.ch.map(e=>`${esc(e[0])} → <b>${esc(e[1]||'(tom)')}</b>`).join(' · ');
+    return `<div class="ovitem">${card(o.p)}<div class="ovchg">Ändrat: ${ch}</div></div>`;
   }).join('')+'</div>';
 }
 function renderAll(){renderChart();renderOverridden();DIMS.forEach(renderDim);renderRank();}
@@ -566,6 +570,12 @@ def main():
       .two{display:flex;gap:20px;flex-wrap:wrap} .two>div{flex:1;min-width:300px}
       .ovitem{margin-bottom:10px}
       .ovchg{font-size:12px;color:var(--accent);margin:4px 0 0 78px;font-weight:600}
+      .ovdetails{margin-top:34px;border-top:1px solid var(--line);padding-top:14px}
+      .ovdetails summary{font-size:21px;font-weight:800;letter-spacing:-.01em;
+        cursor:pointer;list-style:none;margin-bottom:10px}
+      .ovdetails summary::-webkit-details-marker{display:none}
+      .ovdetails summary::before{content:'▸ ';color:var(--muted);font-weight:400}
+      .ovdetails[open] summary::before{content:'▾ '}
       /* redigering av taggar */
       .editbtn{border:none;background:none;cursor:pointer;color:var(--muted);
         font-size:11px;font-weight:600;padding:0 2px;margin-left:2px}
@@ -634,12 +644,12 @@ def main():
            f'<meta name="viewport" content="width=device-width,initial-scale=1">'
            f'<title>IQ TikTok – innehåll vs engagemang</title><style>{css}</style>'
            f'</head><body><div class="wrap">{header}{seg}{charts}'
-           f'<section><h2 id="ovhead">Manuellt ändrade</h2>'
-           f'<div id="overridden"></div></section>'
            f'<div id="dims"></div>'
            f'<section><h2>Starkast &amp; svagast (organiskt vs boostat)</h2>'
            f'<p class="muted">Filtrerat till ≥ {3000} visningar. Klicka för att '
            f'öppna på TikTok.</p><div id="rank"></div></section>'
+           f'<details class="ovdetails"><summary id="ovhead">Manuellt ändrade</summary>'
+           f'<div id="overridden"></div></details>'
            f'</div>{editor}{ovbar}'
            f'<script>window.POSTS={data_js};window.HAS_TONE={str(has_tone).lower()};'
            f'window.HAS_OCCASION={str(has_occasion).lower()};'
