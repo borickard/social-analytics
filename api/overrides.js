@@ -1,22 +1,34 @@
-// Serverless-funktion: läser/skriver manuella taggrättelser till en
-// Vercel KV (Redis)-store via dess REST-API. Miljövariablerna injiceras
-// automatiskt när du kopplar en KV/Upstash-store till projektet i Vercel.
-const KEY = 'iq_overrides';
-const REST_URL = process.env.KV_REST_API_URL || process.env.UPSTASH_REDIS_REST_URL;
-const REST_TOKEN = process.env.KV_REST_API_TOKEN || process.env.UPSTASH_REDIS_REST_TOKEN;
+// Serverless-funktion: läser/skriver manuella taggrättelser till Supabase.
+// Kräver miljövariablerna SUPABASE_URL och SUPABASE_SERVICE_ROLE_KEY i Vercel.
+// Rättelserna sparas som en rad i tabellen app_state (key='iq_overrides').
+//
+// Skapa tabellen en gång i Supabase (SQL Editor):
+//   create table if not exists app_state (
+//     key text primary key,
+//     value jsonb not null default '{}'::jsonb,
+//     updated_at timestamptz default now()
+//   );
+const TABLE = 'app_state';
+const OKEY = 'iq_overrides';
+const SB_URL = process.env.SUPABASE_URL;
+const SB_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_KEY;
 
 module.exports = async (req, res) => {
-  if (!REST_URL || !REST_TOKEN) {
-    res.status(500).json({ error: 'KV-store saknas – koppla en i Vercel (Storage).' });
+  if (!SB_URL || !SB_KEY) {
+    res.status(500).json({ error: 'Saknar SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY.' });
     return;
   }
-  const headers = { Authorization: 'Bearer ' + REST_TOKEN };
+  const base = SB_URL.replace(/\/$/, '') + '/rest/v1/' + TABLE;
+  const headers = {
+    apikey: SB_KEY,
+    Authorization: 'Bearer ' + SB_KEY,
+    'Content-Type': 'application/json',
+  };
   try {
     if (req.method === 'GET') {
-      const r = await fetch(REST_URL + '/get/' + KEY, { headers });
-      const j = await r.json();
-      let data = {};
-      if (j && j.result) { try { data = JSON.parse(j.result) || {}; } catch (e) { data = {}; } }
+      const r = await fetch(base + '?key=eq.' + OKEY + '&select=value', { headers });
+      const rows = await r.json();
+      const data = Array.isArray(rows) && rows[0] && rows[0].value ? rows[0].value : {};
       res.status(200).json(data);
       return;
     }
@@ -24,9 +36,16 @@ module.exports = async (req, res) => {
       let body = req.body;
       if (typeof body === 'string') { try { body = JSON.parse(body); } catch (e) { body = {}; } }
       if (!body || typeof body !== 'object') body = {};
-      await fetch(REST_URL + '/set/' + KEY, {
-        method: 'POST', headers, body: JSON.stringify(body),
+      const r = await fetch(base, {
+        method: 'POST',
+        headers: Object.assign({}, headers, { Prefer: 'resolution=merge-duplicates' }),
+        body: JSON.stringify({ key: OKEY, value: body }),
       });
+      if (!r.ok) {
+        const t = await r.text();
+        res.status(500).json({ error: 'Supabase: ' + t });
+        return;
+      }
       res.status(200).json({ ok: true });
       return;
     }
