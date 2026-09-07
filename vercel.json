@@ -1,5 +1,6 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": null,
-  "outputDirectory": "public"
+  "outputDirectory": "public",
+  "buildCommand": "python3 analyze.py && python3 publish_vercel.py"
 }

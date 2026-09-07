@@ -5,15 +5,17 @@ __pycache__/
 venv/
 env/
 
-# Lokala data- och mediautdata (ligger normalt under ~/iq_tiktok_data)
-iq_tiktok_data/
+# Lokala data- och mediautdata (ligger normalt under ~/iq_tiktok_data).
+# Undantag: den berikade CSV:n versioneras så att Vercel kan bygga om
+# dashboarden i molnet (annars måste analyze.py köras lokalt).
+iq_tiktok_data/*
+!iq_tiktok_data/iq_tiktok_enriched.csv
 iq_tiktok_chrome_profil/
 videos/
 frames/
 *.mp4
 *.jsonl
 iq_tiktok_metrics.csv
-iq_tiktok_enriched.csv
 
 # Business Manager-exporter (rådata – ska inte i repot)
 Video(*.csv

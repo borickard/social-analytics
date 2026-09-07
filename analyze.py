@@ -255,7 +255,7 @@ function groups(posts, keyfn){
       posts:ps})).filter(x=>x.n>=MIN_N);
 }
 
-const COLS=[{k:'k',t:'Grupp',num:false,fmt:esc},{k:'n',t:'n',num:true,fmt:fmtNum},
+const COLS=[{k:'k',t:'Grupp',num:false,fmt:esc},{k:'n',t:'n',num:true,fmt:fmtNum,cls:'n'},
   {k:'med',t:'Median ER',num:true,fmt:fmtPct},{k:'avg',t:'Medel ER',num:true,fmt:fmtPct,muted:true},
   {k:'views',t:'Visn.',num:true,fmt:fmtNum,muted:true},
   {k:'delningar',t:'Deln.',num:true,fmt:fmtNum,muted:true},
@@ -271,14 +271,14 @@ function renderDim(dim){
     return (va<vb?-1:va>vb?1:0)*st.dir;});
   let h = '<table class="bt"><thead><tr>';
   COLS.forEach(c=>{const arrow=st.col===c.k?(st.dir<0?' ▾':' ▴'):'';
-    h+=`<th class="${c.num?'v':''} sortable" data-dim="${dim.id}" data-col="${c.k}">${c.t}${arrow}</th>`;});
+    h+=`<th class="${c.num?'v':''}${c.cls?' '+c.cls:''} sortable" data-dim="${dim.id}" data-col="${c.k}">${c.t}${arrow}</th>`;});
   h+='</tr></thead><tbody>';
   rows.forEach(r=>{
     const isopen=open.has(r.k);
     let cells='';
     COLS.forEach((c,i)=>{cells+= i===0
       ? `<td>${isopen?'▾ ':'▸ '}${esc(r.k)}</td>`
-      : `<td class="v${c.muted?' muted':''}">${c.fmt(r[c.k])}</td>`;});
+      : `<td class="v${c.cls?' '+c.cls:''}${c.muted?' muted':''}">${c.fmt(r[c.k])}</td>`;});
     h+=`<tr class="grow" data-dim="${dim.id}" data-k="${esc(r.k)}">${cells}</tr>`;
     if(isopen){
       const ps=[...r.posts].sort((a,b)=>b.er-a.er);
@@ -577,10 +577,13 @@ def main():
       /* tabeller */
       section{overflow-x:auto}
       table.bt{border-collapse:collapse;width:100%;font-size:14px;background:var(--panel);
-        border:1px solid var(--line);border-radius:16px;overflow:hidden}
+        border:1px solid var(--line);border-radius:16px;overflow:hidden;table-layout:fixed}
       table.bt th,table.bt td{padding:11px 12px;text-align:left;
         border-bottom:1px solid var(--line)}
-      table.bt th.v,table.bt td.v{padding-left:8px;padding-right:12px}
+      /* fasta kolumnbredder – annars hoppar kolumnerna när man sorterar om */
+      table.bt th.v,table.bt td.v{width:82px;padding-left:8px;padding-right:12px}
+      table.bt th.n,table.bt td.n{width:52px}
+      table.bt td:first-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
       table.bt tbody tr:last-child td{border-bottom:none}
       table.bt th{font-size:11px;text-transform:uppercase;letter-spacing:.07em;
         color:var(--muted);font-weight:700;background:var(--card)}
