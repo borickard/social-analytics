@@ -247,12 +247,21 @@ function groups(posts, keyfn){
   posts.forEach(p=>keyfn(p).forEach(k=>{if(k){(g[k]=g[k]||[]).push(p);}}));
   return Object.entries(g).map(([k,ps])=>({k,n:ps.length,
       med:median(ps.map(p=>p.er)),avg:mean(ps.map(p=>p.er)),
-      views:median(ps.map(p=>p.views)),posts:ps})).filter(x=>x.n>=MIN_N);
+      views:median(ps.map(p=>p.views)),
+      delningar:median(ps.map(p=>p.delningar)),
+      kommentarer:median(ps.map(p=>p.kommentarer)),
+      likes:median(ps.map(p=>p.likes)),
+      sparade:median(ps.map(p=>p.sparade)),
+      posts:ps})).filter(x=>x.n>=MIN_N);
 }
 
-const COLS=[{k:'k',t:'Grupp',num:false},{k:'n',t:'n',num:true},
-  {k:'med',t:'Median ER',num:true},{k:'avg',t:'Medel ER',num:true},
-  {k:'views',t:'Median visn.',num:true}];
+const COLS=[{k:'k',t:'Grupp',num:false,fmt:esc},{k:'n',t:'n',num:true,fmt:fmtNum},
+  {k:'med',t:'Median ER',num:true,fmt:fmtPct},{k:'avg',t:'Medel ER',num:true,fmt:fmtPct,muted:true},
+  {k:'views',t:'Visn.',num:true,fmt:fmtNum,muted:true},
+  {k:'delningar',t:'Deln.',num:true,fmt:fmtNum,muted:true},
+  {k:'kommentarer',t:'Komm.',num:true,fmt:fmtNum,muted:true},
+  {k:'likes',t:'Likes',num:true,fmt:fmtNum,muted:true},
+  {k:'sparade',t:'Spar.',num:true,fmt:fmtNum,muted:true}];
 
 function renderDim(dim){
   const st = sortState[dim.id] || (sortState[dim.id]={col:'med',dir:-1});
@@ -266,14 +275,14 @@ function renderDim(dim){
   h+='</tr></thead><tbody>';
   rows.forEach(r=>{
     const isopen=open.has(r.k);
-    h+=`<tr class="grow" data-dim="${dim.id}" data-k="${esc(r.k)}">`+
-       `<td>${isopen?'▾ ':'▸ '}${esc(r.k)}</td>`+
-       `<td class="v">${r.n}</td><td class="v">${fmtPct(r.med)}</td>`+
-       `<td class="v muted">${fmtPct(r.avg)}</td>`+
-       `<td class="v muted">${fmtNum(r.views)}</td></tr>`;
+    let cells='';
+    COLS.forEach((c,i)=>{cells+= i===0
+      ? `<td>${isopen?'▾ ':'▸ '}${esc(r.k)}</td>`
+      : `<td class="v${c.muted?' muted':''}">${c.fmt(r[c.k])}</td>`;});
+    h+=`<tr class="grow" data-dim="${dim.id}" data-k="${esc(r.k)}">${cells}</tr>`;
     if(isopen){
       const ps=[...r.posts].sort((a,b)=>b.er-a.er);
-      h+=`<tr class="drow"><td colspan="5"><div class="cards">${ps.map(card).join('')}</div></td></tr>`;
+      h+=`<tr class="drow"><td colspan="${COLS.length}"><div class="cards">${ps.map(card).join('')}</div></td></tr>`;
     }
   });
   h+='</tbody></table>';
@@ -533,7 +542,8 @@ def main():
       *{box-sizing:border-box}
       body{font:15px/1.55 "Helvetica Neue",Helvetica,Arial,-apple-system,system-ui,sans-serif;
         margin:0;background:var(--bg);color:var(--ink);-webkit-font-smoothing:antialiased}
-      .wrap{max-width:940px;margin:0 auto;padding:36px 20px 100px}
+      .wrap{max-width:1180px;margin:0 auto;padding:36px 20px 100px}
+      .wrap>p{max-width:820px}
       h1{font-size:38px;line-height:1.03;letter-spacing:-.025em;font-weight:800;margin:0 0 8px}
       @media(max-width:560px){h1{font-size:29px}}
       h2{font-size:21px;letter-spacing:-.01em;font-weight:800;margin:32px 0 12px}
@@ -568,8 +578,9 @@ def main():
       section{overflow-x:auto}
       table.bt{border-collapse:collapse;width:100%;font-size:14px;background:var(--panel);
         border:1px solid var(--line);border-radius:16px;overflow:hidden}
-      table.bt th,table.bt td{padding:11px 14px;text-align:left;
+      table.bt th,table.bt td{padding:11px 12px;text-align:left;
         border-bottom:1px solid var(--line)}
+      table.bt th.v,table.bt td.v{padding-left:8px;padding-right:12px}
       table.bt tbody tr:last-child td{border-bottom:none}
       table.bt th{font-size:11px;text-transform:uppercase;letter-spacing:.07em;
         color:var(--muted);font-weight:700;background:var(--card)}
@@ -641,8 +652,9 @@ def main():
               f'<p class="muted">{len(ana)} analyserade inlägg. Viktad ER = '
               f'(likes + kommentarer×5 + delningar×10 + favoriter×5) / visningar. '
               f'Nivåerna lågt/medel/högt beräknas datadrivet ur er faktiska data '
-              f'(kvartiler), separat för organiskt och boostat. Klicka en kategori '
-              f'för att se inläggen, en kolumnrubrik för att sortera.</p>'
+              f'(kvartiler), separat för organiskt och boostat. Kolumnerna '
+              f'deln./komm./likes/spar. visar <b>medianen per inlägg</b>. Klicka en '
+              f'kategori för att se inläggen, en kolumnrubrik för att sortera.</p>'
               f'<div class="stat">{stat(pct(med_org),"median ER organiskt")}'
               f'{stat(pct(med_boost),"median ER boostat")}'
               f'{stat(verdict,"trend organiskt")}'
