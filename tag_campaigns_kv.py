@@ -92,8 +92,22 @@ def api(method, body=None):
     if body is not None:
         req.add_header("Content-Type", "application/json")
         body = json.dumps(body).encode()
-    with urllib.request.urlopen(req, data=body, timeout=30) as r:
-        return json.loads(r.read() or b"{}")
+    try:
+        with urllib.request.urlopen(req, data=body, timeout=30) as r:
+            return json.loads(r.read() or b"{}")
+    except urllib.error.HTTPError as e:
+        detail = ""
+        try:
+            detail = e.read().decode(errors="replace")
+        except Exception:
+            pass
+        hint = ""
+        if e.code == 401:
+            hint = "  (fel användarnamn/lösenord – kolla IQ_SITE_USER/PASSWORD)"
+        elif e.code == 500:
+            hint = ("  (KV svarar inte – vanligast: koppla KV-storen och gör en "
+                    "REDEPLOY i Vercel efteråt, annars saknar funktionen nycklarna)")
+        sys.exit(f"HTTP {e.code} från /api/overrides{hint}\n  Svar: {detail}")
 
 
 def main():

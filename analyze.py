@@ -192,6 +192,10 @@ def post_json(r):
         "organic": is_organic(r),
         "er": round(r["_er"], 6),
         "views": int(r["_views"]),
+        "likes": int(pick(r, "likes_exakt", "likes") or 0),
+        "kommentarer": int(pick(r, "kommentarer_exakt", "kommentarer") or 0),
+        "delningar": int(pick(r, "delningar_exakt", "delningar") or 0),
+        "sparade": int(pick(r, "sparade_exakt", "sparade") or 0),
         "date": (r.get("publiceringsdatum", "") or "")[:10],
     }
 
@@ -289,16 +293,34 @@ function card(p){
     `<a class="pcc" href="${esc(p.url)}" target="_blank" rel="noopener">${esc(p.caption)}</a></div></div>`;
 }
 
+const METRICS={
+  er:{label:'Viktad ER',get:p=>p.er,fmt:fmtPct,minv:true,both:true},
+  delningar:{label:'Delningar',get:p=>p.delningar,fmt:fmtNum},
+  kommentarer:{label:'Kommentarer',get:p=>p.kommentarer,fmt:fmtNum},
+  likes:{label:'Likes',get:p=>p.likes,fmt:fmtNum},
+  sparade:{label:'Sparningar',get:p=>p.sparade,fmt:fmtNum},
+  views:{label:'Visningar',get:p=>p.views,fmt:fmtNum},
+};
+let rankMetric='er';
+function rankCard(p,M){
+  return `<div class="rankitem"><div class="rankval">${M.fmt(M.get(p))} `+
+    `<span class="muted">${M.label.toLowerCase()}</span></div>${card(p)}</div>`;
+}
 function renderRank(){
-  const mk=(posts,best)=>{const c=posts.filter(p=>p.views>=MIN_VIEWS)
-      .sort((a,b)=>best?b.er-a.er:a.er-b.er).slice(0,10);
-    return c.length?`<div class="cards col">${c.map(card).join('')}</div>`:'<p class="muted">Inga inlägg.</p>';};
+  const M=METRICS[rankMetric];
+  const mk=(posts,best)=>{let c=posts.slice();
+    if(M.minv)c=c.filter(p=>p.views>=MIN_VIEWS);
+    c=c.sort((a,b)=>best?M.get(b)-M.get(a):M.get(a)-M.get(b)).slice(0,10);
+    return c.length?`<div class="cards col">${c.map(p=>rankCard(p,M)).join('')}</div>`:'<p class="muted">Inga inlägg.</p>';};
   const org=POSTS.filter(p=>p.organic), bo=POSTS.filter(p=>!p.organic);
-  document.getElementById('rank').innerHTML=
-    `<div class="two"><div><h3>Starkast – organiskt (${org.length})</h3>${mk(org,true)}</div>`+
-    `<div><h3>Starkast – boostat (${bo.length})</h3>${mk(bo,true)}</div></div>`+
-    `<div class="two"><div><h3>Svagast – organiskt</h3>${mk(org,false)}</div>`+
-    `<div><h3>Svagast – boostat</h3>${mk(bo,false)}</div></div>`;
+  const pills=Object.keys(METRICS).map(k=>`<button class="pill mini${k===rankMetric?' active':''}" data-metric="${k}">${METRICS[k].label}</button>`).join('');
+  let h=`<div class="metricbar"><span class="lbl">Sortera efter</span>${pills}</div>`+
+    `<div class="two"><div><h3>Mest – organiskt</h3>${mk(org,true)}</div>`+
+    `<div><h3>Mest – boostat</h3>${mk(bo,true)}</div></div>`;
+  if(M.both)  // botten (svagast) bara meningsfullt för ER
+    h+=`<div class="two"><div><h3>Svagast – organiskt</h3>${mk(org,false)}</div>`+
+       `<div><h3>Svagast – boostat</h3>${mk(bo,false)}</div></div>`;
+  document.getElementById('rank').innerHTML=h;
 }
 
 function quartersAgg(posts){
@@ -419,8 +441,7 @@ function clearLocal(){if(!confirm('Rensa lokala (osparade) ändringar? Redan spa
 function updateOvBar(){const b=document.getElementById('ovbar');if(!b)return;const n=Object.keys(OV).length;
   if(AUTOSAVE){
     b.innerHTML=`<span><b>${n}</b> inlägg med manuella ändringar</span>`+
-      `<span class="muted" id="ovstatus">ändringar sparas automatiskt</span>`+
-      `<button class="pill" data-act="dl">Ladda ner kopia (csv)</button>`;
+      `<span class="muted" id="ovstatus">ändringar sparas automatiskt</span>`;
   }else{
     b.innerHTML=`<span><b>${n}</b> inlägg med manuella ändringar</span>`+
       `<button class="pill dark" data-act="dl">⬇ Ladda ner overrides.csv</button>`+
@@ -431,6 +452,8 @@ function updateOvBar(){const b=document.getElementById('ovbar');if(!b)return;con
 document.addEventListener('click',e=>{
   const eb=e.target.closest('.editbtn');
   if(eb){openEditor(eb.dataset.id);return;}
+  const mp=e.target.closest('.pill[data-metric]');
+  if(mp){rankMetric=mp.dataset.metric;renderRank();return;}
   const act=e.target.closest('[data-act]');
   if(act){if(act.dataset.act==='dl')exportCsv();else if(act.dataset.act==='clr')clearLocal();return;}
   if(e.target.closest('#edSave')){saveEditor();return;}
@@ -534,6 +557,13 @@ def main():
         cursor:pointer;transition:all .15s ease}
       .pill:hover{border-color:var(--muted)}
       .pill.active{background:var(--ink);color:#fff;border-color:var(--ink)}
+      .pill.mini{padding:6px 12px;font-size:13px}
+      .metricbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:0 0 18px}
+      .metricbar .lbl{font-size:11px;text-transform:uppercase;letter-spacing:.09em;
+        color:var(--muted);font-weight:700;margin-right:2px}
+      .rankitem{position:relative}
+      .rankval{font-size:12px;font-weight:700;color:var(--ink);margin:0 0 4px 2px}
+      .rankval .muted{color:var(--muted);font-weight:600}
       /* tabeller */
       section{overflow-x:auto}
       table.bt{border-collapse:collapse;width:100%;font-size:14px;background:var(--panel);
@@ -645,9 +675,11 @@ def main():
            f'<title>IQ TikTok – innehåll vs engagemang</title><style>{css}</style>'
            f'</head><body><div class="wrap">{header}{seg}{charts}'
            f'<div id="dims"></div>'
-           f'<section><h2>Starkast &amp; svagast (organiskt vs boostat)</h2>'
-           f'<p class="muted">Filtrerat till ≥ {3000} visningar. Klicka för att '
-           f'öppna på TikTok.</p><div id="rank"></div></section>'
+           f'<section><h2>Topplistor (organiskt vs boostat)</h2>'
+           f'<p class="muted">Välj vad som ska rangordnas. För viktad ER visas både '
+           f'starkast och svagast (filtrerat till ≥ {3000} visningar för '
+           f'stabilare siffror); för delningar, kommentarer m.m. visas flest. '
+           f'Klicka för att öppna på TikTok.</p><div id="rank"></div></section>'
            f'<details class="ovdetails"><summary id="ovhead">Manuellt ändrade</summary>'
            f'<div id="overridden"></div></details>'
            f'</div>{editor}{ovbar}'
