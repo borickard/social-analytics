@@ -527,6 +527,8 @@ document.addEventListener('click',e=>{
   if(eb){openEditor(eb.dataset.id);return;}
   const mp=e.target.closest('.pill[data-metric]');
   if(mp){rankMetric=mp.dataset.metric;renderRank();return;}
+  const cp=e.target.closest('.pill[data-cols]');
+  if(cp){setCols(+cp.dataset.cols);return;}
   const act=e.target.closest('[data-act]');
   if(act){const a=act.dataset.act;
     if(a==='dl')exportCsv();else if(a==='clr')clearLocal();
@@ -554,6 +556,13 @@ document.querySelectorAll('.pill[data-seg]').forEach(b=>b.addEventListener('clic
   renderAll();}));
 const _sb=document.getElementById('searchbox');
 if(_sb)_sb.addEventListener('input',renderSearch);
+function setCols(n){n=Math.min(5,Math.max(1,n|0))||3;
+  document.documentElement.style.setProperty('--cols',n);
+  document.documentElement.dataset.cols=n;
+  try{localStorage.setItem('iq_cols',n);}catch(e){}
+  document.querySelectorAll('.pill[data-cols]').forEach(b=>b.classList.toggle('active',+b.dataset.cols===n));}
+let _initCols=3;try{_initCols=+localStorage.getItem('iq_cols')||3;}catch(e){}
+setCols(_initCols);
 
 // Bygg dimensions-sektionerna och rendera.
 const host=document.getElementById('dims');
@@ -614,7 +623,7 @@ def main():
       /* Stil inspirerad av playchipless.com: varmt cream, svart/rust, piller,
          versala spärrade etiketter, mjukt rundade kort. */
       :root{--bg:#efece6;--panel:#f7f5f1;--card:#fbfaf7;--ink:#18140f;
-        --muted:#8b857a;--line:#e2ddd3;--accent:#c0562f;--taupe:#8f8275}
+        --muted:#8b857a;--line:#e2ddd3;--accent:#c0562f;--taupe:#8f8275;--cols:3}
       *{box-sizing:border-box}
       body{font:15px/1.55 "Helvetica Neue",Helvetica,Arial,-apple-system,system-ui,sans-serif;
         margin:0;background:var(--bg);color:var(--ink);-webkit-font-smoothing:antialiased}
@@ -669,9 +678,13 @@ def main():
       td.muted{color:var(--muted)}
       .drow td{background:#00000006;padding:6px 12px 14px}
       /* inläggskort */
-      .cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));
+      .cards{display:grid;grid-template-columns:repeat(var(--cols),minmax(0,1fr));
         gap:12px;margin:10px 0}
       .cards.col{grid-template-columns:1fr}
+      /* 1 kolumn = stor miniatyr */
+      :root[data-cols="1"] .cards:not(.col) .pc{gap:16px}
+      :root[data-cols="1"] .cards:not(.col) .pc img{width:132px;height:176px}
+      @media(max-width:640px){.cards:not(.col){grid-template-columns:1fr}}
       .pc{display:flex;gap:12px;text-decoration:none;background:var(--card);
         border:1px solid var(--line);border-radius:16px;padding:10px;
         transition:transform .12s,box-shadow .12s,border-color .12s}
@@ -758,7 +771,11 @@ def main():
     seg = ('<div class="seg"><span class="lbl">Segment</span>'
            '<button class="pill active" data-seg="boost">Boostat</button>'
            '<button class="pill" data-seg="org">Organiskt</button>'
-           '<button class="pill" data-seg="alla">Alla</button></div>'
+           '<button class="pill" data-seg="alla">Alla</button>'
+           '<span class="lbl" style="margin-left:18px">Kolumner</span>'
+           + "".join(f'<button class="pill mini" data-cols="{i}">{i}</button>'
+                     for i in range(1, 6))
+           + '</div>'
            '<p id="levels" class="muted"></p>')
 
     # Tidsgrafen ritas av JS-appen (uppdateras med segment-väljaren).
