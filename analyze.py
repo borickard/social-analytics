@@ -177,6 +177,8 @@ def post_json(r):
         "url": r.get("url", ""),
         "thumb": r.get("thumbnail", "") or f"thumbnails/{vid}.jpg",
         "caption": (r.get("caption", "") or "")[:180],
+        # hela beskrivningen (gemener) för fritextsök, kapad för att hålla nere storleken
+        "sok": (r.get("caption", "") or "").lower()[:1000],
         "typ": r.get("typ", "") or "?",
         "format": r.get("format", "") or "?",
         "kategori": r.get("kategori", "") or "okänt",
@@ -412,7 +414,21 @@ function renderOverridden(){
     return `<div class="ovitem">${card(o.p)}<div class="ovchg">Ändrat: ${ch}</div></div>`;
   }).join('')+'</div>';
 }
-function renderAll(){renderChart();renderOverridden();DIMS.forEach(renderDim);renderRank();}
+function renderSearch(){
+  const box=document.getElementById('searchbox');if(!box)return;
+  const q=(box.value||'').trim().toLowerCase();
+  const info=document.getElementById('searchinfo'),res=document.getElementById('searchres');
+  if(!q){info.textContent='';res.innerHTML='';return;}
+  if(q.length<2){info.textContent='Skriv minst två tecken.';res.innerHTML='';return;}
+  const hits=POSTS.filter(p=>(p.sok||'').includes(q));
+  info.innerHTML=`<b>${hits.length}</b> inlägg innehåller ”${esc(q)}” i beskrivningen.`;
+  if(!hits.length){res.innerHTML='';return;}
+  const ids=hits.map(p=>p.id),allsel=ids.every(id=>SEL.has(id));
+  const sall=`<div class="selall"><label><input type="checkbox" class="selallbox" `+
+    `data-ids="${esc(ids.join(','))}"${allsel?' checked':''}> Markera alla ${hits.length} träffarna</label></div>`;
+  res.innerHTML=sall+`<div class="cards">${hits.map(card).join('')}</div>`;
+}
+function renderAll(){renderChart();renderOverridden();DIMS.forEach(renderDim);renderRank();renderSearch();}
 
 /* ---- Manuella rättelser (overrides) -------------------------------------
    OV = {video_id:{field:value}}. Seedas från overrides.csv (bakat i POSTS av
@@ -536,6 +552,8 @@ document.querySelectorAll('.pill[data-seg]').forEach(b=>b.addEventListener('clic
   segment=e.currentTarget.dataset.seg;
   document.querySelectorAll('.pill[data-seg]').forEach(x=>x.classList.toggle('active',x===e.currentTarget));
   renderAll();}));
+const _sb=document.getElementById('searchbox');
+if(_sb)_sb.addEventListener('input',renderSearch);
 
 // Bygg dimensions-sektionerna och rendera.
 const host=document.getElementById('dims');
@@ -685,6 +703,11 @@ def main():
       .ovdetails summary::-webkit-details-marker{display:none}
       .ovdetails summary::before{content:'▸ ';color:var(--muted);font-weight:400}
       .ovdetails[open] summary::before{content:'▾ '}
+      /* sök i beskrivningar */
+      #searchbox{width:100%;max-width:520px;padding:11px 14px;border:1px solid var(--line);
+        border-radius:12px;background:var(--panel);font:inherit;font-size:15px;color:var(--ink)}
+      #searchbox:focus{outline:none;border-color:var(--accent)}
+      #searchinfo{font-size:13px;color:var(--muted);margin:10px 0 2px}
       /* redigering av taggar */
       .editbtn{border:none;background:none;cursor:pointer;color:var(--muted);
         font-size:11px;font-weight:600;padding:0 2px;margin-left:2px}
@@ -742,6 +765,12 @@ def main():
     charts = ('<section><h2 id="chart-title">Engagemang över tid</h2>'
               '<div id="chart"></div><p id="chart-note" class="muted"></p></section>')
 
+    search = ('<section><h2>Sök i beskrivningar</h2>'
+              '<input id="searchbox" type="search" autocomplete="off" '
+              'placeholder="Skriv ett ord – visar alla inlägg vars beskrivning innehåller det">'
+              '<div id="searchinfo" class="muted"></div>'
+              '<div id="searchres"></div></section>')
+
     editor = ('<div id="editor" class="modal" hidden><div class="sheet">'
               '<div class="mh"><b>Ändra taggar</b>'
               '<button class="x" id="edClose">✕</button></div>'
@@ -758,7 +787,7 @@ def main():
     doc = (f'<!doctype html><html lang="sv"><head><meta charset="utf-8">'
            f'<meta name="viewport" content="width=device-width,initial-scale=1">'
            f'<title>IQ TikTok – innehåll vs engagemang</title><style>{css}</style>'
-           f'</head><body><div class="wrap">{header}{seg}{charts}'
+           f'</head><body><div class="wrap">{header}{seg}{charts}{search}'
            f'<div id="dims"></div>'
            f'<section><h2>Topplistor (organiskt vs boostat)</h2>'
            f'<p class="muted">Välj vad som ska rangordnas. För viktad ER visas både '
