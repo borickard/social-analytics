@@ -241,6 +241,7 @@ if(window.HAS_OCCASION){
 
 const sortState = {};   // dimId -> {col, dir}
 const openState = {};   // dimId -> Set av öppna grupper
+const SEL = new Set();  // markerade inläggs-id för bulkändring
 
 function groups(posts, keyfn){
   const g={};
@@ -282,7 +283,11 @@ function renderDim(dim){
     h+=`<tr class="grow" data-dim="${dim.id}" data-k="${esc(r.k)}">${cells}</tr>`;
     if(isopen){
       const ps=[...r.posts].sort((a,b)=>b.er-a.er);
-      h+=`<tr class="drow"><td colspan="${COLS.length}"><div class="cards">${ps.map(card).join('')}</div></td></tr>`;
+      const ids=ps.map(p=>p.id);
+      const allsel=ids.every(id=>SEL.has(id));
+      const sall=`<div class="selall"><label><input type="checkbox" class="selallbox" `+
+        `data-ids="${esc(ids.join(','))}"${allsel?' checked':''}> Markera alla ${ps.length} i "${esc(r.k)}"</label></div>`;
+      h+=`<tr class="drow"><td colspan="${COLS.length}">${sall}<div class="cards">${ps.map(card).join('')}</div></td></tr>`;
     }
   });
   h+='</tbody></table>';
@@ -292,7 +297,9 @@ function renderDim(dim){
 
 function card(p){
   const ovd=OV[p.id]?'<span class="ovmark">ändrad</span>':'';
-  return `<div class="pc">`+
+  const sel=SEL.has(p.id);
+  return `<div class="pc${sel?' sel':''}">`+
+    `<input type="checkbox" class="selbox" data-id="${esc(p.id)}"${sel?' checked':''} title="Markera för bulkändring">`+
     `<a class="pcimg" href="${esc(p.url)}" target="_blank" rel="noopener"><img loading="lazy" src="${esc(p.thumb)}" alt=""></a>`+
     `<div class="pcm"><div class="pcer ${p.band==='hög'?'er-hi':p.band==='låg'?'er-lo':''}">${fmtPct(p.er)} `+
     `<span class="badge ${p.organic?'o':'b'}">${p.organic?'org':'boost'}</span> `+
@@ -422,6 +429,47 @@ let OV={};
 function applyOv(){POSTS.forEach(p=>{const o=OV[p.id];if(o)for(const f in o)p[f]=o[f];});}
 applyOv();
 
+/* ---- Bulkmarkering & bulkändring ---------------------------------------
+   SEL = markerade inläggs-id. Kryssrutor på varje kort + "markera alla" per
+   grupp. När minst ett är markerat visas bulkfältet (döljer ovbar): välj fält
+   + värde och applicera på alla markerade på en gång. Sparas som vanliga
+   overrides (KV i molnet). */
+let bulkField='har_hook';
+function reflectSel(){                       // spegla SEL till alla kryssrutor + kort utan full omritning
+  document.querySelectorAll('.selbox').forEach(cb=>{
+    const on=SEL.has(cb.dataset.id);cb.checked=on;
+    const pc=cb.closest('.pc');if(pc)pc.classList.toggle('sel',on);});
+  document.querySelectorAll('.selallbox').forEach(cb=>{
+    const ids=(cb.dataset.ids||'').split(',').filter(Boolean);
+    cb.checked=ids.length>0&&ids.every(id=>SEL.has(id));});
+}
+function toggleSel(id,on){on?SEL.add(id):SEL.delete(id);reflectSel();updateBulkBar();}
+function toggleSelAll(ids,on){ids.forEach(id=>on?SEL.add(id):SEL.delete(id));reflectSel();updateBulkBar();}
+function bulkValueOptions(){
+  return (window.EDITABLE[bulkField]||[]).map(v=>`<option value="${esc(v)}">${esc(v||'(tom)')}</option>`).join('');}
+function updateBulkBar(){
+  const bar=document.getElementById('bulkbar'),ov=document.getElementById('ovbar');
+  if(!bar)return;
+  if(!SEL.size){bar.hidden=true;if(ov)ov.hidden=false;return;}
+  if(ov)ov.hidden=true;bar.hidden=false;
+  const fopts=Object.keys(window.EDITABLE).map(f=>`<option value="${esc(f)}"${f===bulkField?' selected':''}>${esc(f)}</option>`).join('');
+  bar.innerHTML=`<span><b>${SEL.size}</b> markerade</span><span class="sep">·</span>`+
+    `<span>sätt</span><select id="bulkField">${fopts}</select>`+
+    `<span>till</span><select id="bulkValue">${bulkValueOptions()}</select>`+
+    `<button class="pill dark" data-act="bulkapply">Applicera på ${SEL.size}</button>`+
+    `<button class="pill" data-act="bulkclear">Avmarkera</button>`;
+}
+function applyBulk(){
+  const vsel=document.getElementById('bulkValue');if(!vsel)return;
+  const v=vsel.value;let n=0;
+  SEL.forEach(id=>{const p=POSTS.find(x=>x.id===id);if(!p)return;
+    if(v!==(p[bulkField]||'')){OV[id]=OV[id]||{};OV[id][bulkField]=v;n++;}});
+  saveLS();applyOv();if(AUTOSAVE)postOverrides();
+  SEL.clear();updateOvBar();renderAll();updateBulkBar();
+  const s=document.getElementById('ovstatus');if(s&&!AUTOSAVE)s.textContent=`${n} inlägg ändrade – ladda ner för att spara`;
+}
+function clearSel(){SEL.clear();reflectSel();updateBulkBar();}
+
 let editId=null;
 function openEditor(id){editId=id;const p=POSTS.find(x=>x.id===id);if(!p)return;
   document.getElementById('edCap').textContent=(p.caption||id).slice(0,90);
@@ -464,7 +512,9 @@ document.addEventListener('click',e=>{
   const mp=e.target.closest('.pill[data-metric]');
   if(mp){rankMetric=mp.dataset.metric;renderRank();return;}
   const act=e.target.closest('[data-act]');
-  if(act){if(act.dataset.act==='dl')exportCsv();else if(act.dataset.act==='clr')clearLocal();return;}
+  if(act){const a=act.dataset.act;
+    if(a==='dl')exportCsv();else if(a==='clr')clearLocal();
+    else if(a==='bulkapply')applyBulk();else if(a==='bulkclear')clearSel();return;}
   if(e.target.closest('#edSave')){saveEditor();return;}
   if(e.target.closest('#edClose')||e.target.closest('#edCancel')||e.target.id==='editor'){closeEditor();return;}
   const th=e.target.closest('th.sortable');
@@ -473,6 +523,14 @@ document.addEventListener('click',e=>{
   const gr=e.target.closest('tr.grow');
   if(gr){const d=gr.dataset.dim,k=gr.dataset.k;const s=openState[d];
     s.has(k)?s.delete(k):s.add(k);renderDim(DIMS.find(x=>x.id===d));return;}
+});
+document.addEventListener('change',e=>{
+  const cb=e.target.closest('.selbox');
+  if(cb){toggleSel(cb.dataset.id,cb.checked);return;}
+  const ca=e.target.closest('.selallbox');
+  if(ca){toggleSelAll((ca.dataset.ids||'').split(',').filter(Boolean),ca.checked);return;}
+  if(e.target.id==='bulkField'){bulkField=e.target.value;
+    const vs=document.getElementById('bulkValue');if(vs)vs.innerHTML=bulkValueOptions();return;}
 });
 document.querySelectorAll('.pill[data-seg]').forEach(b=>b.addEventListener('click',e=>{
   segment=e.currentTarget.dataset.seg;
@@ -593,13 +651,20 @@ def main():
       td.muted{color:var(--muted)}
       .drow td{background:#00000006;padding:6px 12px 14px}
       /* inläggskort */
-      .cards{display:flex;gap:12px;flex-wrap:wrap;margin:10px 0}
-      .cards.col{flex-direction:column}
-      .pc{display:flex;gap:12px;width:300px;text-decoration:none;background:var(--card);
+      .cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));
+        gap:12px;margin:10px 0}
+      .cards.col{grid-template-columns:1fr}
+      .pc{display:flex;gap:12px;text-decoration:none;background:var(--card);
         border:1px solid var(--line);border-radius:16px;padding:10px;
-        transition:transform .12s,box-shadow .12s}
+        transition:transform .12s,box-shadow .12s,border-color .12s}
       .pc:hover{transform:translateY(-1px);box-shadow:0 6px 18px #0000000f}
-      .cards.col .pc{width:100%}
+      .pc.sel{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent) inset}
+      .selbox{flex:0 0 auto;width:17px;height:17px;margin:2px 0 0;
+        accent-color:var(--accent);cursor:pointer}
+      .selall{margin:2px 0 8px;font-size:12.5px}
+      .selall label{display:inline-flex;align-items:center;gap:7px;cursor:pointer;
+        color:var(--muted);font-weight:600}
+      .selall input{width:16px;height:16px;accent-color:var(--accent);cursor:pointer}
       .pc img{width:66px;height:88px;object-fit:cover;border-radius:10px;
         background:var(--line);flex:0 0 auto}
       .pcm{min-width:0} .pcer{font-weight:800;font-size:15px;letter-spacing:-.01em}
@@ -646,7 +711,11 @@ def main():
         border-top:1px solid var(--line);padding:9px 16px;display:flex;
         align-items:center;gap:10px;flex-wrap:wrap;justify-content:center;
         font-size:13px;z-index:20}
+      .ovbar[hidden]{display:none}
       .ovbar .pill{padding:6px 12px;font-size:13px}
+      .ovbar select{padding:6px 9px;border:1px solid var(--line);border-radius:9px;
+        background:var(--card);font:inherit;font-size:13px;color:var(--ink);cursor:pointer}
+      .ovbar .sep{color:var(--line)}
     """
     def stat(v, l):
         return f'<div class="c"><div class="big">{v}</div><div class="muted">{l}</div></div>'
@@ -680,7 +749,8 @@ def main():
               '<div class="mfoot"><button class="pill" id="edCancel">Avbryt</button>'
               '<button class="pill dark" id="edSave">Spara</button></div>'
               '</div></div>')
-    ovbar = '<div class="ovbar" id="ovbar"></div>'
+    ovbar = ('<div class="ovbar" id="bulkbar" hidden></div>'
+             '<div class="ovbar" id="ovbar"></div>')
 
     ov_js = json.dumps(ov, ensure_ascii=False).replace("</", "<\\/")
     edit_js = json.dumps(EDITABLE, ensure_ascii=False).replace("</", "<\\/")
