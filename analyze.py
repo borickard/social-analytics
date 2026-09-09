@@ -244,6 +244,7 @@ if(window.HAS_OCCASION){
 const sortState = {};   // dimId -> {col, dir}
 const openState = {};   // dimId -> Set av öppna grupper
 const SEL = new Set();  // markerade inläggs-id för bulkändring
+const EXP = new Set();  // inlägg med utfälld ("läs mer") beskrivning
 
 function groups(posts, keyfn){
   const g={};
@@ -299,16 +300,18 @@ function renderDim(dim){
 
 function card(p){
   const ovd=OV[p.id]?'<span class="ovmark">ändrad</span>':'';
-  const sel=SEL.has(p.id);
-  return `<div class="pc${sel?' sel':''}">`+
+  const sel=SEL.has(p.id),exp=EXP.has(p.id);
+  return `<div class="pc${sel?' sel':''}${exp?' expanded':''}">`+
     `<input type="checkbox" class="selbox" data-id="${esc(p.id)}"${sel?' checked':''} title="Markera för bulkändring">`+
     `<a class="pcimg" href="${esc(p.url)}" target="_blank" rel="noopener"><img loading="lazy" src="${esc(p.thumb)}" alt=""></a>`+
     `<div class="pcm"><div class="pcer ${p.band==='hög'?'er-hi':p.band==='låg'?'er-lo':''}">${fmtPct(p.er)} `+
     `<span class="badge ${p.organic?'o':'b'}">${p.organic?'org':'boost'}</span> `+
     `<span class="lvl">${p.band}</span> ${ovd}`+
     `<button class="editbtn" data-id="${esc(p.id)}" title="Ändra taggar">✎ ändra</button></div>`+
-    `<div class="muted">${fmtNum(p.views)} visn. · ${esc(p.typ)} / ${esc(p.kategori)} · ${esc(p.date)}</div>`+
-    `<a class="pcc" href="${esc(p.url)}" target="_blank" rel="noopener">${esc(p.caption)}</a></div></div>`;
+    `<div class="muted pcmeta">${fmtNum(p.views)} visn. · ${esc(p.typ)} / ${esc(p.kategori)} · ${esc(p.date)}</div>`+
+    `<div class="pcc">${esc(p.caption)||'<span class="muted">(ingen beskrivning)</span>'}</div>`+
+    `<button class="morebtn" data-id="${esc(p.id)}" hidden>${exp?'visa mindre':'läs mer'}</button>`+
+    `</div></div>`;
 }
 
 const METRICS={
@@ -427,8 +430,22 @@ function renderSearch(){
   const sall=`<div class="selall"><label><input type="checkbox" class="selallbox" `+
     `data-ids="${esc(ids.join(','))}"${allsel?' checked':''}> Markera alla ${hits.length} träffarna</label></div>`;
   res.innerHTML=sall+`<div class="cards">${hits.map(card).join('')}</div>`;
+  requestAnimationFrame(refreshMore);
 }
-function renderAll(){renderChart();renderOverridden();DIMS.forEach(renderDim);renderRank();renderSearch();}
+// Visa "läs mer" bara på kort vars beskrivning faktiskt är klippt (>3 rader).
+// Kräver layout, så körs efter att korten ritats (och när bredd/kolumner ändras).
+function refreshMore(){
+  document.querySelectorAll('.pc').forEach(pc=>{
+    const btn=pc.querySelector('.morebtn'),cc=pc.querySelector('.pcc');
+    if(!btn||!cc)return;
+    const id=btn.dataset.id;
+    if(EXP.has(id)){btn.hidden=false;btn.textContent='visa mindre';return;}
+    const clipped=cc.scrollHeight-cc.clientHeight>2;   // 0 utan layout (t.ex. i test)
+    btn.hidden=!clipped;if(clipped)btn.textContent='läs mer';
+  });
+}
+function renderAll(){renderChart();renderOverridden();DIMS.forEach(renderDim);renderRank();renderSearch();
+  requestAnimationFrame(refreshMore);}
 
 /* ---- Manuella rättelser (overrides) -------------------------------------
    OV = {video_id:{field:value}}. Seedas från overrides.csv (bakat i POSTS av
@@ -525,6 +542,10 @@ function updateOvBar(){const b=document.getElementById('ovbar');if(!b)return;con
 document.addEventListener('click',e=>{
   const eb=e.target.closest('.editbtn');
   if(eb){openEditor(eb.dataset.id);return;}
+  const mb=e.target.closest('.morebtn');
+  if(mb){const id=mb.dataset.id;EXP.has(id)?EXP.delete(id):EXP.add(id);
+    const pc=mb.closest('.pc');if(pc)pc.classList.toggle('expanded',EXP.has(id));
+    refreshMore();return;}
   const mp=e.target.closest('.pill[data-metric]');
   if(mp){rankMetric=mp.dataset.metric;renderRank();return;}
   const cp=e.target.closest('.pill[data-cols]');
@@ -560,7 +581,8 @@ function setCols(n){n=Math.min(5,Math.max(1,n|0))||3;
   document.documentElement.style.setProperty('--cols',n);
   document.documentElement.dataset.cols=n;
   try{localStorage.setItem('iq_cols',n);}catch(e){}
-  document.querySelectorAll('.pill[data-cols]').forEach(b=>b.classList.toggle('active',+b.dataset.cols===n));}
+  document.querySelectorAll('.pill[data-cols]').forEach(b=>b.classList.toggle('active',+b.dataset.cols===n));
+  requestAnimationFrame(refreshMore);}
 let _initCols=3;try{_initCols=+localStorage.getItem('iq_cols')||3;}catch(e){}
 setCols(_initCols);
 
@@ -668,7 +690,7 @@ def main():
       /* fasta kolumnbredder – annars hoppar kolumnerna när man sorterar om */
       table.bt th.v,table.bt td.v{width:82px;padding-left:8px;padding-right:12px}
       table.bt th.n,table.bt td.n{width:52px}
-      table.bt td:first-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+      table.bt tr.grow td:first-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
       table.bt tbody tr:last-child td{border-bottom:none}
       table.bt th{font-size:11px;text-transform:uppercase;letter-spacing:.07em;
         color:var(--muted);font-weight:700;background:var(--card)}
@@ -679,37 +701,56 @@ def main():
       .drow td{background:#00000006;padding:6px 12px 14px}
       /* inläggskort */
       .cards{display:grid;grid-template-columns:repeat(var(--cols),minmax(0,1fr));
-        gap:12px;margin:10px 0}
+        gap:14px;margin:10px 0}
       .cards.col{grid-template-columns:1fr}
-      /* 1 kolumn = stor miniatyr */
-      :root[data-cols="1"] .cards:not(.col) .pc{gap:16px}
-      :root[data-cols="1"] .cards:not(.col) .pc img{width:132px;height:176px}
       @media(max-width:640px){.cards:not(.col){grid-template-columns:1fr}}
-      .pc{display:flex;gap:12px;text-decoration:none;background:var(--card);
-        border:1px solid var(--line);border-radius:16px;padding:10px;
+      .pc{position:relative;display:flex;background:var(--card);overflow:hidden;
+        border:1px solid var(--line);border-radius:16px;text-decoration:none;
         transition:transform .12s,box-shadow .12s,border-color .12s}
       .pc:hover{transform:translateY(-1px);box-shadow:0 6px 18px #0000000f}
       .pc.sel{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent) inset}
-      .selbox{flex:0 0 auto;width:17px;height:17px;margin:2px 0 0;
-        accent-color:var(--accent);cursor:pointer}
-      .selall{margin:2px 0 8px;font-size:12.5px}
+      .selbox{position:absolute;top:8px;left:8px;z-index:2;width:18px;height:18px;
+        accent-color:var(--accent);cursor:pointer;border-radius:4px;
+        box-shadow:0 0 0 3px #fbfaf7cc}
+      .selall{margin:2px 0 10px;font-size:12.5px}
       .selall label{display:inline-flex;align-items:center;gap:7px;cursor:pointer;
         color:var(--muted);font-weight:600}
       .selall input{width:16px;height:16px;accent-color:var(--accent);cursor:pointer}
-      .pc img{width:66px;height:88px;object-fit:cover;border-radius:10px;
-        background:var(--line);flex:0 0 auto}
-      .pcm{min-width:0} .pcer{font-weight:800;font-size:15px;letter-spacing:-.01em}
+      .pcimg{flex:0 0 auto;line-height:0;display:block}
+      .pcimg img{object-fit:cover;background:var(--line);display:block}
+      .pcm{min-width:0;flex:1}
+      .pcer{font-weight:800;font-size:15px;letter-spacing:-.01em;
+        display:flex;align-items:center;flex-wrap:wrap;gap:6px}
       .er-hi{color:#4a6647} .er-lo{color:#a2481f}
       .lvl{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
-      .pcc{font-size:12.5px;color:var(--muted);margin-top:3px;overflow:hidden;
-        text-decoration:none;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical}
-      .pcimg{flex:0 0 auto;line-height:0}
+      .pcmeta{font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:3px}
+      .pcc{font-size:12.5px;color:var(--muted);line-height:1.45;margin-top:4px;
+        white-space:normal;overflow:hidden;overflow-wrap:anywhere;display:-webkit-box;
+        -webkit-line-clamp:3;-webkit-box-orient:vertical;min-height:calc(1.45em * 3)}
+      .pc.expanded .pcc{-webkit-line-clamp:unset;overflow:visible;min-height:0}
+      .morebtn{align-self:flex-start;margin-top:2px;border:none;background:none;
+        color:var(--accent);font:inherit;font-size:12px;font-weight:700;cursor:pointer;padding:2px 0}
+      .morebtn:hover{text-decoration:underline}
+      /* rutnät (dims + sök): bild överst, text under → ryms alltid, jämn höjd */
+      .cards:not(.col) .pc{flex-direction:column;height:100%}
+      .cards:not(.col) .pcimg{width:100%}
+      .cards:not(.col) .pcimg img{width:100%;aspect-ratio:3/4;max-height:360px}
+      .cards:not(.col) .pcm{padding:10px 12px 12px}
+      /* 1 kolumn: stor stående miniatyr till vänster, text till höger */
+      :root[data-cols="1"] .cards:not(.col) .pc{flex-direction:row;padding:12px;gap:16px}
+      :root[data-cols="1"] .cards:not(.col) .pcimg{width:auto}
+      :root[data-cols="1"] .cards:not(.col) .pcimg img{width:170px;height:227px;
+        aspect-ratio:auto;max-height:none;border-radius:12px}
+      :root[data-cols="1"] .cards:not(.col) .pcm{padding:2px 4px 2px 0}
+      /* enkolumnslistor (topplistor + manuellt ändrade): bild till vänster */
+      .cards.col .pc{flex-direction:row;gap:12px;padding:10px}
+      .cards.col .pcimg img{width:92px;height:122px;border-radius:10px}
       .badge{font-size:10px;font-weight:700;padding:2px 8px;border-radius:999px;
-        vertical-align:middle;text-transform:uppercase;letter-spacing:.04em}
+        text-transform:uppercase;letter-spacing:.04em}
       .badge.o{background:#5f7d5c22;color:#4a6647} .badge.b{background:#c0562f22;color:#a2481f}
       .two{display:flex;gap:20px;flex-wrap:wrap} .two>div{flex:1;min-width:300px}
       .ovitem{margin-bottom:10px}
-      .ovchg{font-size:12px;color:var(--accent);margin:4px 0 0 78px;font-weight:600}
+      .ovchg{font-size:12px;color:var(--accent);margin:4px 0 0 114px;font-weight:600}
       .ovdetails{margin-top:34px;border-top:1px solid var(--line);padding-top:14px}
       .ovdetails summary{font-size:21px;font-weight:800;letter-spacing:-.01em;
         cursor:pointer;list-style:none;margin-bottom:10px}
