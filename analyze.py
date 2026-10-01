@@ -577,6 +577,8 @@ document.querySelectorAll('.pill[data-seg]').forEach(b=>b.addEventListener('clic
   renderAll();}));
 const _sb=document.getElementById('searchbox');
 if(_sb)_sb.addEventListener('input',renderSearch);
+// "Logga ut" visas bara när sajten serveras (dvs bakom inloggning på Vercel).
+if(AUTOSAVE){const _ll=document.getElementById('logoutlink');if(_ll)_ll.hidden=false;}
 function setCols(n){n=Math.min(5,Math.max(1,n|0))||3;
   document.documentElement.style.setProperty('--cols',n);
   document.documentElement.dataset.cols=n;
@@ -649,8 +651,12 @@ def main():
       *{box-sizing:border-box}
       body{font:15px/1.55 "Helvetica Neue",Helvetica,Arial,-apple-system,system-ui,sans-serif;
         margin:0;background:var(--bg);color:var(--ink);-webkit-font-smoothing:antialiased}
-      .wrap{max-width:1180px;margin:0 auto;padding:36px 20px 100px}
+      .wrap{max-width:1180px;margin:0 auto;padding:36px 20px 100px;position:relative}
       .wrap>p{max-width:820px}
+      .logout{position:absolute;top:38px;right:20px;font-size:12px;font-weight:700;
+        color:var(--muted);text-decoration:none;border:1px solid var(--line);
+        border-radius:999px;padding:6px 13px;background:var(--panel)}
+      .logout:hover{color:var(--accent);border-color:var(--muted)}
       h1{font-size:38px;line-height:1.03;letter-spacing:-.025em;font-weight:800;margin:0 0 8px}
       @media(max-width:560px){h1{font-size:29px}}
       h2{font-size:21px;letter-spacing:-.01em;font-weight:800;margin:32px 0 12px}
@@ -797,7 +803,8 @@ def main():
     def stat(v, l):
         return f'<div class="c"><div class="big">{v}</div><div class="muted">{l}</div></div>'
 
-    header = (f'<h1>IQ TikTok – innehåll vs engagemang</h1>'
+    header = (f'<a href="/logout" id="logoutlink" class="logout" hidden>Logga ut</a>'
+              f'<h1>IQ TikTok – innehåll vs engagemang</h1>'
               f'<p class="muted">{len(ana)} analyserade inlägg. Viktad ER = '
               f'(likes + kommentarer×5 + delningar×10 + favoriter×5) / visningar. '
               f'Nivåerna lågt/medel/högt beräknas datadrivet ur er faktiska data '
