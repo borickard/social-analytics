@@ -468,6 +468,8 @@ applyOv();
    + värde och applicera på alla markerade på en gång. Sparas som vanliga
    overrides (KV i molnet). */
 let bulkField='har_hook';
+let bulkVal=null;        // förvalt värde (den tagg man hoppat in i)
+let bulkManual=false;    // true när man själv ändrat fält/värde → sluta förvälja
 // Vilket redigerbart fält hör en kryssruta till? (dvs vilken dimension man står
 // i.) Används för att förvälja rätt fält i bulkraden när man börjar markera.
 function ctxField(el){
@@ -476,6 +478,13 @@ function ctxField(el){
   const d=DIMS.find(x=>'dim-'+x.id===host.id);
   return d&&d.field&&window.EDITABLE[d.field]?d.field:null;
 }
+// Postens värde för fältet, om det är ett giltigt alternativ (annars null).
+function postFieldVal(id,field){const p=POSTS.find(x=>x.id===id);
+  if(!p)return null;const v=p[field];
+  return (window.EDITABLE[field]||[]).includes(v)?v:null;}
+// Förvälj fält + värde efter den dimension/tagg man markerar i (om inte man
+// själv redan ändrat bulkraden).
+function autoPick(ctx,id){if(!ctx||bulkManual)return;bulkField=ctx;bulkVal=postFieldVal(id,ctx);}
 function reflectSel(){                       // spegla SEL till alla kryssrutor + kort utan full omritning
   document.querySelectorAll('.selbox').forEach(cb=>{
     const on=SEL.has(cb.dataset.id);cb.checked=on;
@@ -484,20 +493,20 @@ function reflectSel(){                       // spegla SEL till alla kryssrutor 
     const ids=(cb.dataset.ids||'').split(',').filter(Boolean);
     cb.checked=ids.length>0&&ids.every(id=>SEL.has(id));});
 }
-function toggleSel(id,on,ctx){const wasEmpty=SEL.size===0;
+function toggleSel(id,on,ctx){
   on?SEL.add(id):SEL.delete(id);
-  if(on&&wasEmpty&&ctx)bulkField=ctx;   // förvälj dimensionens fält vid första markeringen
+  if(on)autoPick(ctx,id);
   reflectSel();updateBulkBar();}
-function toggleSelAll(ids,on,ctx){const wasEmpty=SEL.size===0;
+function toggleSelAll(ids,on,ctx){
   ids.forEach(id=>on?SEL.add(id):SEL.delete(id));
-  if(on&&wasEmpty&&ctx)bulkField=ctx;
+  if(on&&ids.length)autoPick(ctx,ids[0]);
   reflectSel();updateBulkBar();}
 function bulkValueOptions(){
-  return (window.EDITABLE[bulkField]||[]).map(v=>`<option value="${esc(v)}">${esc(v||'(tom)')}</option>`).join('');}
+  return (window.EDITABLE[bulkField]||[]).map(v=>`<option value="${esc(v)}"${v===bulkVal?' selected':''}>${esc(v||'(tom)')}</option>`).join('');}
 function updateBulkBar(){
   const bar=document.getElementById('bulkbar'),ov=document.getElementById('ovbar');
   if(!bar)return;
-  if(!SEL.size){bar.hidden=true;if(ov)ov.hidden=false;return;}
+  if(!SEL.size){bar.hidden=true;if(ov)ov.hidden=false;bulkManual=false;bulkVal=null;return;}
   if(ov)ov.hidden=true;bar.hidden=false;
   const fopts=Object.keys(window.EDITABLE).map(f=>`<option value="${esc(f)}"${f===bulkField?' selected':''}>${esc(f)}</option>`).join('');
   bar.innerHTML=`<span><b>${SEL.size}</b> markerade</span><span class="sep">·</span>`+
@@ -582,8 +591,9 @@ document.addEventListener('change',e=>{
   if(cb){toggleSel(cb.dataset.id,cb.checked,ctxField(cb));return;}
   const ca=e.target.closest('.selallbox');
   if(ca){toggleSelAll((ca.dataset.ids||'').split(',').filter(Boolean),ca.checked,ctxField(ca));return;}
-  if(e.target.id==='bulkField'){bulkField=e.target.value;
+  if(e.target.id==='bulkField'){bulkField=e.target.value;bulkVal=null;bulkManual=true;
     const vs=document.getElementById('bulkValue');if(vs)vs.innerHTML=bulkValueOptions();return;}
+  if(e.target.id==='bulkValue'){bulkVal=e.target.value;bulkManual=true;return;}
 });
 document.querySelectorAll('.pill[data-seg]').forEach(b=>b.addEventListener('click',e=>{
   segment=e.currentTarget.dataset.seg;
