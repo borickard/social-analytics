@@ -23,6 +23,7 @@ Kör:  python analyze.py            (använder standard-CSV:n)
 """
 
 import csv
+import datetime
 import json
 import os
 import statistics
@@ -145,6 +146,32 @@ def load(path, ov):
     return ana
 
 
+def _pubdate(r):
+    s = (r.get("publiceringsdatum", "") or "")[:10]
+    try:
+        return datetime.date.fromisoformat(s)
+    except ValueError:
+        return None
+
+
+def attach_benchmarks(ana, half_window_days=45):
+    """Per inlägg: jämför dess ER mot MEDIANEN för samma segment (organiskt vs
+    boostat) i ett rullande fönster ±1,5 mån runt publiceringen. Sparar kvoten
+    (ER/median) och periodens gränser för hover-texten i dashboarden."""
+    pts = [(_pubdate(r), r["_er"], is_organic(r), r) for r in ana]
+    delta = datetime.timedelta(days=half_window_days)
+    for d, er, seg, r in pts:
+        if d is None:
+            r["_bench"] = None
+            continue
+        lo, hi = d - delta, d + delta
+        vals = [e for (dd, e, s, _) in pts if s == seg and dd is not None and lo <= dd <= hi]
+        med = statistics.median(vals) if vals else None
+        r["_bench"] = (er / med) if med else None
+        r["_bench_lo"] = lo.isoformat()
+        r["_bench_hi"] = hi.isoformat()
+
+
 # --------------------------------------------------------- server-side charts ---
 def months(rows):
     m = defaultdict(list)
@@ -199,6 +226,9 @@ def post_json(r):
         "delningar": int(pick(r, "delningar_exakt", "delningar") or 0),
         "sparade": int(pick(r, "sparade_exakt", "sparade") or 0),
         "date": (r.get("publiceringsdatum", "") or "")[:10],
+        "bench": round(r["_bench"], 4) if r.get("_bench") else None,
+        "bench_lo": r.get("_bench_lo", ""),
+        "bench_hi": r.get("_bench_hi", ""),
     }
 
 
@@ -290,7 +320,7 @@ function renderDim(dim){
       const allsel=ids.every(id=>SEL.has(id));
       const sall=`<div class="selall"><label><input type="checkbox" class="selallbox" `+
         `data-ids="${esc(ids.join(','))}"${allsel?' checked':''}> Markera alla ${ps.length} i "${esc(r.k)}"</label></div>`;
-      h+=`<tr class="drow"><td colspan="${COLS.length}">${sall}<div class="cards">${ps.map(card).join('')}</div></td></tr>`;
+      h+=`<tr class="drow"><td colspan="${COLS.length}">${sall}<div class="cards">${ps.map(p=>card(p)).join('')}</div></td></tr>`;
     }
   });
   h+='</tbody></table>';
@@ -298,20 +328,47 @@ function renderDim(dim){
   document.getElementById('dim-'+dim.id).innerHTML=h;
 }
 
-function card(p){
-  const ovd=OV[p.id]?'<span class="ovmark">ändrad</span>':'';
-  const sel=SEL.has(p.id),exp=EXP.has(p.id);
-  return `<div class="pc${sel?' sel':''}${exp?' expanded':''}">`+
-    `<input type="checkbox" class="selbox" data-id="${esc(p.id)}"${sel?' checked':''} title="Markera för bulkändring">`+
-    `<a class="pcimg" href="${esc(p.url)}" target="_blank" rel="noopener"><img loading="lazy" src="${esc(p.thumb)}" alt=""></a>`+
-    `<div class="pcm"><div class="pcer ${p.band==='hög'?'er-hi':p.band==='låg'?'er-lo':''}">${fmtPct(p.er)} `+
-    `<span class="badge ${p.organic?'o':'b'}">${p.organic?'org':'boost'}</span> `+
-    `<span class="lvl">${p.band}</span> ${ovd}`+
-    `<button class="editbtn" data-id="${esc(p.id)}" title="Ändra taggar">✎ ändra</button></div>`+
-    `<div class="muted pcmeta">${fmtNum(p.views)} visn. · ${esc(p.typ)} / ${esc(p.kategori)} · ${esc(p.date)}</div>`+
-    `<div class="pcc">${esc(p.caption)||'<span class="muted">(ingen beskrivning)</span>'}</div>`+
-    `<button class="morebtn" data-id="${esc(p.id)}" hidden>${exp?'visa mindre':'läs mer'}</button>`+
-    `</div></div>`;
+const ICON={
+ like:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.6l-1-1a5.5 5.5 0 0 0-7.8 7.8l1 1L12 21l7.8-7.6 1-1a5.5 5.5 0 0 0 0-7.8z"/></svg>',
+ comment:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.4 8.4 0 0 1-9 8.4 9.9 9.9 0 0 1-4-.8L3 20l1-3.8A8.4 8.4 0 1 1 21 11.5z"/></svg>',
+ share:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2 11 13"/><path d="M22 2 15 22l-4-9-9-4z"/></svg>',
+ save:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>',
+};
+const ER_FORMULA='(likes + kommentarer×5 + delningar×10 + favoriter×5) / visningar';
+function erInner(p){return `<b>${fmtPct(p.er)}</b><span class="tip tip-l">Viktad ER<i>${ER_FORMULA}</i></span>`;}
+function benchText(p){const r=p.bench;
+  if(r==null)return null;
+  if(r>=1.05){let m=(Math.round(r*10)/10).toFixed(1).replace('.',',').replace(/,0$/,'');return {t:m+'× median',c:'pos'};}
+  if(r>0.95)return {t:'≈ median',c:'mid'};
+  return {t:'under median',c:'neg'};}
+function benchHTML(p){const b=benchText(p);if(!b)return '';
+  const seg=p.organic?'organiskt':'boostat';
+  const tip=`<span class="tip tip-r">Mot medianen för ${seg}<i>${esc(p.bench_lo)} – ${esc(p.bench_hi)} (±1,5 mån)</i></span>`;
+  return `<span class="bench ${b.c}">${b.t}${tip}</span>`;}
+function metricsHTML(p){return [['like',p.likes],['comment',p.kommentarer],['share',p.delningar],['save',p.sparade]]
+  .map(([k,v])=>`<span class="m"><span class="mi">${ICON[k]}</span>${fmtNum(v)}</span>`).join('');}
+function card(p,compact){
+  const sel=SEL.has(p.id),exp=EXP.has(p.id),ovd=OV[p.id];
+  const seg=p.organic?'organiskt':'boostat';
+  const check=`<input type="checkbox" class="selbox" data-id="${esc(p.id)}"${sel?' checked':''} title="Markera för bulkändring">`;
+  const img=`<img loading="lazy" src="${esc(p.thumb)}" alt="">`;
+  const cap=`<div class="pcc">${esc(p.caption)||'<span class="muted">(ingen beskrivning)</span>'}</div>`+
+    `<button class="morebtn" data-id="${esc(p.id)}" hidden>${exp?'visa mindre':'läs mer'}</button>`;
+  const foot=`<div class="foot"><div class="metaw"><span class="l1">${esc(p.typ)} · ${esc(p.kategori)}</span>`+
+    `<span class="l2">${esc(p.date)} · ${seg}</span></div>`+
+    `<button class="editbtn" data-id="${esc(p.id)}" title="Ändra taggar">✎ ändra</button></div>`;
+  if(compact){
+    return `<div class="pc compact${sel?' sel':''}${exp?' expanded':''}">${check}`+
+      `<a class="pcimg" href="${esc(p.url)}" target="_blank" rel="noopener">${img}</a>`+
+      `<div class="pcm"><div class="erline"><span class="er sm">${erInner(p)}</span>${benchHTML(p)}`+
+      `${ovd?'<span class="ovmark">ändrad</span>':''}</div>`+
+      `<div class="metrics">${metricsHTML(p)}</div>${cap}${foot}</div></div>`;
+  }
+  return `<div class="pc${sel?' sel':''}${exp?' expanded':''}">${check}`+
+    `<a class="pcimg" href="${esc(p.url)}" target="_blank" rel="noopener">${img}`+
+      `<span class="er">${erInner(p)}</span>${benchHTML(p)}`+
+      `${ovd?'<span class="ovchip">ändrad</span>':''}</a>`+
+    `<div class="pcm"><div class="metrics">${metricsHTML(p)}</div>${cap}${foot}</div></div>`;
 }
 
 const METRICS={
@@ -325,7 +382,7 @@ const METRICS={
 let rankMetric='er';
 function rankCard(p,M){
   return `<div class="rankitem"><div class="rankval">${M.fmt(M.get(p))} `+
-    `<span class="muted">${M.label.toLowerCase()}</span></div>${card(p)}</div>`;
+    `<span class="muted">${M.label.toLowerCase()}</span></div>${card(p,true)}</div>`;
 }
 function renderRank(){
   const M=METRICS[rankMetric];
@@ -414,7 +471,7 @@ function renderOverridden(){
   if(!items.length){el.innerHTML='<p class="muted">Inga manuella taggrättelser än (kampanj-taggning räknas inte här).</p>';return;}
   el.innerHTML='<div class="cards col">'+items.map(o=>{
     const ch=o.ch.map(e=>`${esc(e[0])} → <b>${esc(e[1]||'(tom)')}</b>`).join(' · ');
-    return `<div class="ovitem">${card(o.p)}<div class="ovchg">Ändrat: ${ch}</div></div>`;
+    return `<div class="ovitem">${card(o.p,true)}<div class="ovchg">Ändrat: ${ch}</div></div>`;
   }).join('')+'</div>';
 }
 function renderSearch(){
@@ -429,7 +486,7 @@ function renderSearch(){
   const ids=hits.map(p=>p.id),allsel=ids.every(id=>SEL.has(id));
   const sall=`<div class="selall"><label><input type="checkbox" class="selallbox" `+
     `data-ids="${esc(ids.join(','))}"${allsel?' checked':''}> Markera alla ${hits.length} träffarna</label></div>`;
-  res.innerHTML=sall+`<div class="cards">${hits.map(card).join('')}</div>`;
+  res.innerHTML=sall+`<div class="cards">${hits.map(p=>card(p)).join('')}</div>`;
   requestAnimationFrame(refreshMore);
 }
 // Visa "läs mer" bara på kort vars beskrivning faktiskt är klippt (>3 rader).
@@ -634,6 +691,7 @@ def main():
     ana = load(CSV_PATH, ov)
     if not ana:
         sys.exit("Inga analyserade rader med visningar hittades.")
+    attach_benchmarks(ana)
     if ov:
         print(f"Tillämpar {sum(len(v) for v in ov.values())} manuella rättelser "
               f"på {len(ov)} inlägg (overrides.csv).")
@@ -671,7 +729,9 @@ def main():
       /* Stil inspirerad av playchipless.com: varmt cream, svart/rust, piller,
          versala spärrade etiketter, mjukt rundade kort. */
       :root{--bg:#efece6;--panel:#f7f5f1;--card:#fbfaf7;--ink:#18140f;
-        --muted:#8b857a;--line:#e2ddd3;--accent:#c0562f;--taupe:#8f8275;--cols:3}
+        --muted:#8b857a;--line:#e2ddd3;--accent:#c0562f;--taupe:#8f8275;--cols:3;
+        --iq-blue:#1359c5;--iq-pink:#ffaac7;--iq-navy:#242f55;
+        --disp:"Onest","Helvetica Neue",Helvetica,Arial,system-ui,sans-serif}
       *{box-sizing:border-box}
       body{font:15px/1.55 "Helvetica Neue",Helvetica,Arial,-apple-system,system-ui,sans-serif;
         margin:0;background:var(--bg);color:var(--ink);-webkit-font-smoothing:antialiased}
@@ -681,9 +741,9 @@ def main():
         color:var(--muted);text-decoration:none;border:1px solid var(--line);
         border-radius:999px;padding:6px 13px;background:var(--panel)}
       .logout:hover{color:var(--accent);border-color:var(--muted)}
-      h1{font-size:38px;line-height:1.03;letter-spacing:-.025em;font-weight:800;margin:0 0 8px}
-      @media(max-width:560px){h1{font-size:29px}}
-      h2{font-size:21px;letter-spacing:-.01em;font-weight:800;margin:32px 0 12px}
+      h1{font-family:var(--disp);font-size:40px;line-height:1.02;letter-spacing:-.025em;font-weight:800;margin:0 0 8px}
+      @media(max-width:560px){h1{font-size:30px}}
+      h2{font-family:var(--disp);font-size:22px;letter-spacing:-.015em;font-weight:800;margin:32px 0 12px}
       h3{font-size:11px;text-transform:uppercase;letter-spacing:.09em;color:var(--muted);
         font-weight:700;margin:16px 0 8px}
       .muted{color:var(--muted)} a{color:inherit}
@@ -729,60 +789,84 @@ def main():
       tr.grow{cursor:pointer;transition:background .12s} tr.grow:hover{background:#0000000a}
       td.muted{color:var(--muted)}
       .drow td{background:#00000006;padding:6px 12px 14px}
-      /* inläggskort */
-      .cards{display:grid;grid-template-columns:repeat(var(--cols),minmax(0,1fr));
-        gap:14px;margin:10px 0}
+      /* ---- inläggskort ---- */
+      .cards{display:grid;grid-template-columns:repeat(var(--cols),minmax(0,1fr));gap:14px;margin:10px 0}
       .cards.col{grid-template-columns:1fr}
       @media(max-width:640px){.cards:not(.col){grid-template-columns:1fr}}
       .pc{position:relative;display:flex;background:var(--card);overflow:hidden;
         border:1px solid var(--line);border-radius:16px;text-decoration:none;
         transition:transform .12s,box-shadow .12s,border-color .12s}
-      .pc:hover{transform:translateY(-1px);box-shadow:0 6px 18px #0000000f}
-      .pc.sel{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent) inset}
-      .selbox{position:absolute;top:8px;left:8px;z-index:2;width:18px;height:18px;
-        accent-color:var(--accent);cursor:pointer;border-radius:4px;
-        box-shadow:0 0 0 3px #fbfaf7cc}
+      .pc:hover{transform:translateY(-1px);box-shadow:0 8px 20px #0000000f}
+      .pc.sel{border-color:var(--iq-blue);box-shadow:0 0 0 1px var(--iq-blue) inset}
+      .selbox{position:absolute;top:9px;left:9px;z-index:3;width:18px;height:18px;
+        accent-color:var(--iq-blue);cursor:pointer;border-radius:4px;box-shadow:0 0 0 3px #00000026}
       .selall{margin:2px 0 10px;font-size:12.5px}
-      .selall label{display:inline-flex;align-items:center;gap:7px;cursor:pointer;
-        color:var(--muted);font-weight:600}
-      .selall input{width:16px;height:16px;accent-color:var(--accent);cursor:pointer}
-      .pcimg{flex:0 0 auto;line-height:0;display:block}
+      .selall label{display:inline-flex;align-items:center;gap:7px;cursor:pointer;color:var(--muted);font-weight:600}
+      .selall input{width:16px;height:16px;accent-color:var(--iq-blue);cursor:pointer}
+      .pcimg{flex:0 0 auto;line-height:0;display:block;position:relative}
       .pcimg img{object-fit:cover;background:var(--line);display:block}
-      .pcm{min-width:0;flex:1}
-      .pcer{font-weight:800;font-size:15px;letter-spacing:-.01em;
-        display:flex;align-items:center;flex-wrap:wrap;gap:6px}
-      .er-hi{color:#4a6647} .er-lo{color:#a2481f}
-      .lvl{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
-      .pcmeta{font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:3px}
-      .pcc{font-size:12.5px;color:var(--muted);line-height:1.45;margin-top:4px;
-        white-space:normal;overflow:hidden;overflow-wrap:anywhere;display:-webkit-box;
-        -webkit-line-clamp:3;-webkit-box-orient:vertical;min-height:calc(1.45em * 3)}
+      .pcm{min-width:0;flex:1;display:flex;flex-direction:column}
+      /* ER-badge (bara siffran; "viktad ER" vid hover) + median-chip */
+      .er{position:absolute;background:var(--iq-blue);color:#fff;border-radius:12px;
+        padding:7px 11px;box-shadow:0 6px 16px rgba(19,89,197,.42);line-height:1}
+      .er b{font-family:var(--disp);font-weight:800;font-size:21px;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+      .bench{position:absolute;font-size:11px;font-weight:750;padding:5px 10px;border-radius:999px;
+        white-space:nowrap;font-variant-numeric:tabular-nums}
+      .bench.pos{background:var(--iq-pink);color:var(--iq-navy)}
+      .bench.mid{background:#ffffffe6;color:var(--iq-navy)}
+      .bench.neg{background:rgba(36,47,85,.78);color:#fff}
+      .er,.bench{cursor:default}
+      .tip{position:absolute;bottom:calc(100% + 8px);z-index:6;width:max-content;max-width:210px;
+        background:var(--iq-navy);color:#fff;font-weight:600;font-size:11.5px;line-height:1.35;
+        padding:8px 10px;border-radius:9px;box-shadow:0 8px 20px rgba(0,0,0,.3);opacity:0;
+        transform:translateY(3px);transition:opacity .13s,transform .13s;pointer-events:none;text-align:left;white-space:normal}
+      .tip i{display:block;font-style:normal;font-weight:450;opacity:.82;margin-top:3px;font-size:10.5px}
+      .tip-l{left:0} .tip-r{right:0}
+      .er:hover .tip,.bench:hover .tip{opacity:1;transform:translateY(0)}
+      /* mått med symboler */
+      .metrics{display:flex;flex-wrap:wrap;gap:12px;color:var(--ink)}
+      .m{display:inline-flex;align-items:center;gap:5px;font-size:13px;font-weight:650;font-variant-numeric:tabular-nums}
+      .mi{width:15px;height:15px;color:var(--muted);display:inline-flex} .mi svg{width:15px;height:15px}
+      .pcc{font-size:12.5px;color:var(--muted);line-height:1.45;margin-top:8px;white-space:normal;
+        overflow:hidden;overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;
+        min-height:calc(1.45em * 2)}
       .pc.expanded .pcc{-webkit-line-clamp:unset;overflow:visible;min-height:0}
-      .morebtn{align-self:flex-start;margin-top:2px;border:none;background:none;
-        color:var(--accent);font:inherit;font-size:12px;font-weight:700;cursor:pointer;padding:2px 0}
+      .morebtn{align-self:flex-start;margin-top:2px;border:none;background:none;color:var(--iq-blue);
+        font:inherit;font-size:12px;font-weight:700;cursor:pointer;padding:2px 0}
       .morebtn:hover{text-decoration:underline}
-      /* rutnät (dims + sök): bild överst, text under → ryms alltid, jämn höjd */
+      .foot{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:auto;padding-top:9px}
+      .metaw{display:flex;flex-direction:column;gap:1px;min-width:0}
+      .metaw .l1{font-size:11.5px;color:var(--muted);font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+      .metaw .l2{font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums}
+      .editbtn{flex:0 0 auto;border:1px solid var(--line);background:transparent;color:var(--iq-blue);
+        font:inherit;font-size:11.5px;font-weight:700;padding:6px 12px;border-radius:999px;cursor:pointer;white-space:nowrap;margin:0}
+      .editbtn:hover{border-color:var(--iq-blue)}
+      .ovchip{position:absolute;top:9px;right:9px;z-index:3;background:var(--iq-pink);color:var(--iq-navy);
+        font-size:9.5px;font-weight:800;text-transform:uppercase;letter-spacing:.04em;padding:3px 8px;border-radius:999px}
+      .ovmark{font-size:10px;color:var(--iq-blue);font-weight:800;text-transform:uppercase;letter-spacing:.04em}
+      /* rutnät (dims + sök): bild överst, ER/median överlagrade på tumnageln */
       .cards:not(.col) .pc{flex-direction:column;height:100%}
       .cards:not(.col) .pcimg{width:100%}
       .cards:not(.col) .pcimg img{width:100%;aspect-ratio:3/4;max-height:360px}
-      .cards:not(.col) .pcm{padding:10px 12px 12px}
-      /* 1 kolumn: stor stående miniatyr till vänster, text till höger */
-      :root[data-cols="1"] .cards:not(.col) .pc{flex-direction:row;padding:12px;gap:16px}
-      :root[data-cols="1"] .cards:not(.col) .pcimg{width:auto}
-      :root[data-cols="1"] .cards:not(.col) .pcimg img{width:170px;height:227px;
-        aspect-ratio:auto;max-height:none;border-radius:12px}
-      :root[data-cols="1"] .cards:not(.col) .pcm{padding:2px 4px 2px 0}
-      /* enkolumnslistor (topplistor + manuellt ändrade): bild till vänster */
-      .cards.col .pc{flex-direction:row;gap:12px;padding:10px}
-      .cards.col .pcimg img{width:92px;height:122px;border-radius:10px}
-      .badge{font-size:10px;font-weight:700;padding:2px 8px;border-radius:999px;
-        text-transform:uppercase;letter-spacing:.04em}
-      .badge.o{background:#5f7d5c22;color:#4a6647} .badge.b{background:#c0562f22;color:#a2481f}
+      .cards:not(.col) .er{bottom:10px;left:10px}
+      .cards:not(.col) .bench{bottom:10px;right:10px;max-width:calc(100% - 94px)}
+      .cards:not(.col) .pcm{padding:11px 13px 12px}
+      :root[data-cols="1"] .cards:not(.col) .pcimg img{max-height:460px}
+      /* kompakta listor (topplistor + manuellt ändrade): bild vänster, ER inline */
+      .pc.compact{flex-direction:row;gap:12px;padding:10px}
+      .pc.compact .pcimg img{width:92px;height:122px;border-radius:10px}
+      .pc.compact .pcm{padding:0}
+      .erline{display:flex;align-items:center;flex-wrap:wrap;gap:8px}
+      .pc.compact .er{position:relative;box-shadow:none;padding:4px 9px;border-radius:9px}
+      .pc.compact .er b{font-size:16px}
+      .pc.compact .bench{position:relative}
+      .pc.compact .tip{bottom:auto;top:calc(100% + 8px)}
+      .pc.compact .pcc{-webkit-line-clamp:2;min-height:0;margin-top:7px}
       .two{display:flex;gap:20px;flex-wrap:wrap} .two>div{flex:1;min-width:300px}
       .ovitem{margin-bottom:10px}
       .ovchg{font-size:12px;color:var(--accent);margin:4px 0 0 114px;font-weight:600}
       .ovdetails{margin-top:34px;border-top:1px solid var(--line);padding-top:14px}
-      .ovdetails summary{font-size:21px;font-weight:800;letter-spacing:-.01em;
+      .ovdetails summary{font-family:var(--disp);font-size:22px;font-weight:800;letter-spacing:-.015em;
         cursor:pointer;list-style:none;margin-bottom:10px}
       .ovdetails summary::-webkit-details-marker{display:none}
       .ovdetails summary::before{content:'▸ ';color:var(--muted);font-weight:400}
@@ -828,7 +912,7 @@ def main():
         return f'<div class="c"><div class="big">{v}</div><div class="muted">{l}</div></div>'
 
     header = (f'<a href="/logout" id="logoutlink" class="logout" hidden>Logga ut</a>'
-              f'<h1>IQ TikTok – innehåll vs engagemang</h1>'
+              f'<h1>IQ × TikTok Dashboard</h1>'
               f'<p class="muted">{len(ana)} analyserade inlägg. Viktad ER = '
               f'(likes + kommentarer×5 + delningar×10 + favoriter×5) / visningar. '
               f'Nivåerna lågt/medel/högt beräknas datadrivet ur er faktiska data '
@@ -875,7 +959,12 @@ def main():
 
     doc = (f'<!doctype html><html lang="sv"><head><meta charset="utf-8">'
            f'<meta name="viewport" content="width=device-width,initial-scale=1">'
-           f'<title>IQ TikTok – innehåll vs engagemang</title><style>{css}</style>'
+           f'<title>IQ × TikTok Dashboard</title>'
+           f'<link rel="preconnect" href="https://fonts.googleapis.com">'
+           f'<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>'
+           f'<link rel="stylesheet" href="https://fonts.googleapis.com/css2?'
+           f'family=Onest:wght@400;500;600;700;800&display=swap">'
+           f'<style>{css}</style>'
            f'</head><body><div class="wrap">{header}{seg}{charts}{search}'
            f'<div id="dims"></div>'
            f'<section><h2>Topplistor (organiskt vs boostat)</h2>'

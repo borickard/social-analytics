@@ -56,7 +56,7 @@ function loginPage(user, msg) {
   button:hover{background:#c0562f}
 </style></head><body>
   <form class="box" method="post" action="/login">
-    <h1>IQ TikTok</h1>
+    <h1>IQ × TikTok</h1>
     ${err}
     <label for="u">Användarnamn</label>
     <input id="u" type="text" name="username" value="${user}" autocomplete="username" autocapitalize="none" autocorrect="off">
