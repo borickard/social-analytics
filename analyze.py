@@ -427,31 +427,36 @@ function renderChart(){
   const L=levelsOf(segPosts());
   const lv=document.getElementById('levels');
   if(lv)lv.innerHTML=`Nivåer för <b>${lbl}</b> (datadrivet, kvartiler): lågt &lt; ${fmtPct(L.q1)} · medel · högt &gt; ${fmtPct(L.q3)} — median ${fmtPct(L.med)}.`;
-  const note=document.getElementById('chart-note');
-  if(series.length<2){document.getElementById('chart').innerHTML='<p class="muted">För få kvartal i detta segment.</p>';note.textContent='';return;}
-  const W=920,H=300,pl=54,pr=60,pt=24,pb=38;
+  const note=document.getElementById('chart-note'),host=document.getElementById('chart');
+  if(series.length<2){host.innerHTML='<p class="muted" style="padding:12px">För få kvartal i detta segment.</p>';note.textContent='';return;}
+  const W=960,H=340,pl=48,pr=58,pt=26,pb=44;
   const ys=series.map(s=>s[1]*100),ymax=Math.max(...ys)*1.18||1;
-  const X=i=>pl+i*(W-pl-pr)/(series.length-1),Y=v=>H-pb-(v/ymax)*(H-pt-pb);
+  const X=i=>pl+i*(W-pl-pr)/(series.length-1),Y=v=>H-pb-(v/ymax)*(H-pt-pb),base=Y(0);
   const pctLbl=v=>v.toFixed(2).replace('.',',')+' %';
-  // horisontellt rutnät + y-etiketter
-  let grid='',ystep=ymax<=6?1:ymax<=14?2:5;
-  for(let t=0;t<=ymax;t+=ystep){const y=Y(t);
-    grid+=`<line x1="${pl}" y1="${y}" x2="${W-pr}" y2="${y}" stroke="#e2ddd3"/>`+
-      `<text x="${pl-8}" y="${y+4}" text-anchor="end" font-size="10" fill="#8b857a">${(''+t).replace('.',',')} %</text>`;}
-  // vertikala linjer per kvartal (punkt → baslinje) + värde-etikett per punkt
-  let vl='',vlab='';
-  series.forEach((s,i)=>{const x=X(i),y=Y(ys[i]);
-    vl+=`<line x1="${x.toFixed(1)}" y1="${y.toFixed(1)}" x2="${x.toFixed(1)}" y2="${H-pb}" stroke="#d8d2c7" stroke-width="1"/>`;
-    vlab+=`<text x="${x.toFixed(1)}" y="${(y-9).toFixed(1)}" text-anchor="middle" font-size="9.5" fill="#18140f">${pctLbl(ys[i])}</text>`;});
-  // nivålinjer (lågt/median/högt)
-  let gu='';[[L.q1*100,'lågt','#c0562f'],[L.med*100,'median','#8f8275'],[L.q3*100,'högt','#5f7d5c']].forEach(g=>{if(g[0]>0&&g[0]<=ymax){const y=Y(g[0]);
-    gu+=`<line x1="${pl}" y1="${y}" x2="${W-pr}" y2="${y}" stroke="${g[2]}" stroke-dasharray="5 3" stroke-width="1.2"/>`+
-      `<text x="${W-pr+4}" y="${y+4}" font-size="10" fill="${g[2]}">${g[1]}</text>`;}});
-  const line=series.map((s,i)=>`${X(i).toFixed(1)},${Y(ys[i]).toFixed(1)}`).join(' ');
-  const st=Math.max(1,Math.ceil(series.length/20));let xl='';
-  for(let i=0;i<series.length;i+=st)xl+=`<text x="${X(i).toFixed(1)}" y="${H-pb+18}" text-anchor="middle" font-size="10" fill="currentColor">${series[i][0]}</text>`;
-  const dots=series.map((s,i)=>`<circle cx="${X(i).toFixed(1)}" cy="${Y(ys[i]).toFixed(1)}" r="2.8" fill="#c0562f"><title>${s[0]}: ${ys[i].toFixed(2)} % (n=${s[2]})</title></circle>`).join('');
-  document.getElementById('chart').innerHTML=`<svg viewBox="0 0 ${W} ${H}" width="100%" style="width:100%">${grid}${vl}${gu}<polyline points="${line}" fill="none" stroke="#18140f" stroke-width="2"/>${dots}${vlab}${xl}</svg>`;
+  let grid='';const ystep=ymax<=1?0.2:ymax<=2.5?0.5:ymax<=6?1:ymax<=14?2:5,ydec=ystep<1?1:0;
+  for(let i=0;i*ystep<=ymax+1e-9;i++){const t=i*ystep,y=Y(t);
+    grid+=`<line x1="${pl}" y1="${y.toFixed(1)}" x2="${W-pr}" y2="${y.toFixed(1)}" stroke="#e2ddd3"/>`+
+      `<text x="${pl-9}" y="${(y+3.5).toFixed(1)}" text-anchor="end" font-size="10.5" fill="#8b857a">${t.toFixed(ydec).replace('.',',')} %</text>`;}
+  let band='';
+  if(L.q1>0&&L.q3>L.q1){const y3=Y(Math.min(L.q3*100,ymax)),y1=Y(L.q1*100);
+    band=`<rect x="${pl}" y="${y3.toFixed(1)}" width="${(W-pl-pr).toFixed(1)}" height="${(y1-y3).toFixed(1)}" fill="#242f550d"/>`;}
+  let medline='';
+  if(L.med*100<=ymax){const ym=Y(L.med*100);
+    medline=`<line x1="${pl}" y1="${ym.toFixed(1)}" x2="${W-pr}" y2="${ym.toFixed(1)}" stroke="#242f55" stroke-width="1.2" stroke-dasharray="5 4" opacity=".5"/>`+
+      `<text x="${pl+6}" y="${(ym-5).toFixed(1)}" font-size="10" font-weight="600" fill="#242f55" opacity=".72">median</text>`;}
+  const P=series.map((s,i)=>[X(i),Y(ys[i])]);
+  const line=P.map(p=>`${p[0].toFixed(1)},${p[1].toFixed(1)}`).join(' ');
+  const area=`M ${P[0][0].toFixed(1)} ${base.toFixed(1)} `+P.map(p=>`L ${p[0].toFixed(1)} ${p[1].toFixed(1)}`).join(' ')+` L ${P[P.length-1][0].toFixed(1)} ${base.toFixed(1)} Z`;
+  const dots=P.map((p,i)=>`<circle cx="${p[0].toFixed(1)}" cy="${p[1].toFixed(1)}" r="4" fill="#1359c5" stroke="#fff" stroke-width="2"><title>${series[i][0]}: ${ys[i].toFixed(2)} % (n=${series[i][2]})</title></circle>`).join('');
+  const vlab=P.map((p,i)=>`<text x="${p[0].toFixed(1)}" y="${(p[1]-11).toFixed(1)}" text-anchor="middle" font-size="9.5" font-weight="700" fill="#242f55">${pctLbl(ys[i])}</text>`).join('');
+  const st=Math.max(1,Math.ceil(series.length/16));let xl='';
+  for(let i=0;i<series.length;i+=st)xl+=`<text x="${X(i).toFixed(1)}" y="${H-pb+20}" text-anchor="middle" font-size="10.5" fill="#8b857a">${series[i][0]}</text>`;
+  host.innerHTML=`<svg viewBox="0 0 ${W} ${H}" width="100%" style="width:100%">`+
+    `<defs><linearGradient id="iqarea" x1="0" y1="0" x2="0" y2="1">`+
+    `<stop offset="0" stop-color="#1359c5" stop-opacity=".22"/><stop offset="1" stop-color="#1359c5" stop-opacity="0"/></linearGradient></defs>`+
+    `${grid}${band}${medline}<path d="${area}" fill="url(#iqarea)"/>`+
+    `<polyline points="${line}" fill="none" stroke="#1359c5" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>`+
+    `${dots}${vlab}${xl}</svg>`;
   const tr=trendOf(series);
   const k=Math.min(3,series.length);
   const early=median(series.slice(0,k).map(s=>s[1]*100)),recent=median(series.slice(-k).map(s=>s[1]*100));
@@ -735,24 +740,38 @@ def main():
       *{box-sizing:border-box}
       body{font:15px/1.55 "Helvetica Neue",Helvetica,Arial,-apple-system,system-ui,sans-serif;
         margin:0;background:var(--bg);color:var(--ink);-webkit-font-smoothing:antialiased}
-      .wrap{max-width:1180px;margin:0 auto;padding:36px 20px 100px;position:relative}
-      .wrap>p{max-width:820px}
-      .logout{position:absolute;top:38px;right:20px;font-size:12px;font-weight:700;
-        color:var(--muted);text-decoration:none;border:1px solid var(--line);
-        border-radius:999px;padding:6px 13px;background:var(--panel)}
-      .logout:hover{color:var(--accent);border-color:var(--muted)}
+      .wrap{max-width:1180px;margin:0 auto;padding:28px 20px 100px}
+      /* hero / header-band i IQ-marinblått */
+      .hero{position:relative;overflow:hidden;background:var(--iq-navy);color:#fff;
+        border-radius:24px;padding:26px 30px 22px;margin-bottom:26px}
+      .hero::before{content:"";position:absolute;top:-45%;right:-8%;width:440px;height:440px;
+        background:radial-gradient(circle,rgba(19,89,197,.75),transparent 68%);pointer-events:none}
+      .hero::after{content:"";position:absolute;bottom:-70%;left:28%;width:380px;height:380px;
+        background:radial-gradient(circle,rgba(255,170,199,.5),transparent 70%);pointer-events:none}
+      .hero>*{position:relative;z-index:1}
+      .eyebrow{font-size:12px;font-weight:700;letter-spacing:.15em;text-transform:uppercase;
+        color:var(--iq-pink);margin:0 0 8px}
+      .hero h1{color:#fff;margin:0 0 10px}
+      .hero .lead{color:rgba(255,255,255,.76);max-width:74ch;margin:0 0 20px;font-size:14.5px}
+      .hero .lead b{color:#fff;font-weight:650}
+      .logout{position:absolute;top:22px;right:24px;z-index:2;font-size:12px;font-weight:700;
+        color:#fff;text-decoration:none;border:1px solid rgba(255,255,255,.32);
+        border-radius:999px;padding:6px 13px;background:rgba(255,255,255,.12)}
+      .logout:hover{background:rgba(255,255,255,.22);border-color:rgba(255,255,255,.55)}
       h1{font-family:var(--disp);font-size:40px;line-height:1.02;letter-spacing:-.025em;font-weight:800;margin:0 0 8px}
       @media(max-width:560px){h1{font-size:30px}}
-      h2{font-family:var(--disp);font-size:22px;letter-spacing:-.015em;font-weight:800;margin:32px 0 12px}
+      h2{font-family:var(--disp);font-size:22px;letter-spacing:-.015em;font-weight:800;color:var(--iq-navy);margin:32px 0 12px}
       h3{font-size:11px;text-transform:uppercase;letter-spacing:.09em;color:var(--muted);
         font-weight:700;margin:16px 0 8px}
       .muted{color:var(--muted)} a{color:inherit}
-      /* nyckeltal-kort */
-      .stat{display:flex;gap:12px;flex-wrap:wrap;margin:18px 0 6px}
-      .stat .c{flex:1;min-width:150px;background:var(--panel);border:1px solid var(--line);
-        border-radius:18px;padding:16px 18px}
-      .stat .big{font-size:26px;font-weight:800;letter-spacing:-.02em;margin-bottom:2px}
-      .stat .muted{font-size:13px}
+      /* nyckeltal-kort (i hero) */
+      .stat{display:flex;gap:12px;flex-wrap:wrap;margin:0}
+      .stat .c{flex:1;min-width:150px;background:rgba(255,255,255,.10);
+        border:1px solid rgba(255,255,255,.20);border-radius:16px;padding:14px 17px}
+      .stat .c.ac-pink{border-top:3px solid var(--iq-pink)}
+      .stat .c.ac-blue{border-top:3px solid var(--iq-blue)}
+      .stat .big{font-family:var(--disp);font-size:27px;font-weight:800;letter-spacing:-.02em;margin-bottom:2px;color:#fff}
+      .stat .muted{font-size:12.5px;color:rgba(255,255,255,.7)}
       /* segment-piller */
       .seg{position:sticky;top:0;z-index:5;display:flex;align-items:center;gap:8px;
         flex-wrap:wrap;padding:12px 0;
@@ -762,8 +781,8 @@ def main():
       .pill{border:1px solid var(--line);background:transparent;color:var(--ink);
         border-radius:999px;padding:8px 16px;font:inherit;font-size:14px;font-weight:600;
         cursor:pointer;transition:all .15s ease}
-      .pill:hover{border-color:var(--muted)}
-      .pill.active{background:var(--ink);color:#fff;border-color:var(--ink)}
+      .pill:hover{border-color:var(--iq-blue)}
+      .pill.active{background:var(--iq-navy);color:#fff;border-color:var(--iq-navy)}
       .pill.mini{padding:6px 12px;font-size:13px}
       .metricbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:0 0 18px}
       .metricbar .lbl{font-size:11px;text-transform:uppercase;letter-spacing:.09em;
@@ -773,6 +792,14 @@ def main():
       .rankval .muted{color:var(--muted);font-weight:600}
       /* tabeller */
       section{overflow-x:auto}
+      /* tidsgraf */
+      #chart{background:var(--panel);border:1px solid var(--line);border-radius:18px;
+        padding:14px 14px 6px;margin-top:2px}
+      #chart svg{display:block;overflow:visible}
+      #chart-note{margin-top:14px;background:var(--panel);border:1px solid var(--line);
+        border-left:3px solid var(--iq-blue);border-radius:12px;padding:11px 15px;
+        font-size:13.5px;line-height:1.5}
+      #chart-note strong{color:var(--iq-navy)}
       table.bt{border-collapse:collapse;width:100%;font-size:14px;background:var(--panel);
         border:1px solid var(--line);border-radius:16px;overflow:hidden;table-layout:fixed}
       table.bt th,table.bt td{padding:11px 12px;text-align:left;
@@ -785,7 +812,7 @@ def main():
       table.bt th{font-size:11px;text-transform:uppercase;letter-spacing:.07em;
         color:var(--muted);font-weight:700;background:var(--card)}
       th.v,td.v{text-align:right;white-space:nowrap}
-      th.sortable{cursor:pointer;user-select:none} th.sortable:hover{color:var(--ink)}
+      th.sortable{cursor:pointer;user-select:none} th.sortable:hover{color:var(--iq-navy)}
       tr.grow{cursor:pointer;transition:background .12s} tr.grow:hover{background:#0000000a}
       td.muted{color:var(--muted)}
       .drow td{background:#00000006;padding:6px 12px 14px}
@@ -864,7 +891,7 @@ def main():
       .pc.compact .pcc{-webkit-line-clamp:2;min-height:0;margin-top:7px}
       .two{display:flex;gap:20px;flex-wrap:wrap} .two>div{flex:1;min-width:300px}
       .ovitem{margin-bottom:10px}
-      .ovchg{font-size:12px;color:var(--accent);margin:4px 0 0 114px;font-weight:600}
+      .ovchg{font-size:12px;color:var(--iq-blue);margin:4px 0 0 114px;font-weight:600}
       .ovdetails{margin-top:34px;border-top:1px solid var(--line);padding-top:14px}
       .ovdetails summary{font-family:var(--disp);font-size:22px;font-weight:800;letter-spacing:-.015em;
         cursor:pointer;list-style:none;margin-bottom:10px}
@@ -874,14 +901,9 @@ def main():
       /* sök i beskrivningar */
       #searchbox{width:100%;max-width:520px;padding:11px 14px;border:1px solid var(--line);
         border-radius:12px;background:var(--panel);font:inherit;font-size:15px;color:var(--ink)}
-      #searchbox:focus{outline:none;border-color:var(--accent)}
+      #searchbox:focus{outline:none;border-color:var(--iq-blue)}
       #searchinfo{font-size:13px;color:var(--muted);margin:10px 0 2px}
-      /* redigering av taggar */
-      .editbtn{border:none;background:none;cursor:pointer;color:var(--muted);
-        font-size:11px;font-weight:600;padding:0 2px;margin-left:2px}
-      .editbtn:hover{color:var(--accent)}
-      .ovmark{font-size:10px;color:var(--accent);font-weight:700;
-        text-transform:uppercase;letter-spacing:.04em}
+      /* redigering av taggar: redigeraren (modal) */
       .modal{position:fixed;inset:0;background:#00000066;display:flex;
         align-items:center;justify-content:center;z-index:50;padding:16px}
       .modal[hidden]{display:none}
@@ -908,21 +930,23 @@ def main():
         background:var(--card);font:inherit;font-size:13px;color:var(--ink);cursor:pointer}
       .ovbar .sep{color:var(--line)}
     """
-    def stat(v, l):
-        return f'<div class="c"><div class="big">{v}</div><div class="muted">{l}</div></div>'
+    def stat(v, l, ac=""):
+        cls = "c" + (" " + ac if ac else "")
+        return f'<div class="{cls}"><div class="big">{v}</div><div class="muted">{l}</div></div>'
 
-    header = (f'<a href="/logout" id="logoutlink" class="logout" hidden>Logga ut</a>'
+    header = (f'<header class="hero">'
+              f'<a href="/logout" id="logoutlink" class="logout" hidden>Logga ut</a>'
+              f'<p class="eyebrow">Innehåll × engagemang</p>'
               f'<h1>IQ × TikTok Dashboard</h1>'
-              f'<p class="muted">{len(ana)} analyserade inlägg. Viktad ER = '
-              f'(likes + kommentarer×5 + delningar×10 + favoriter×5) / visningar. '
-              f'Nivåerna lågt/medel/högt beräknas datadrivet ur er faktiska data '
-              f'(kvartiler), separat för organiskt och boostat. Kolumnerna '
-              f'deln./komm./likes/spar. visar <b>medianen per inlägg</b>. Klicka en '
-              f'kategori för att se inläggen, en kolumnrubrik för att sortera.</p>'
-              f'<div class="stat">{stat(pct(med_org),"median ER organiskt")}'
-              f'{stat(pct(med_boost),"median ER boostat")}'
+              f'<p class="lead">{len(ana)} analyserade inlägg. <b>Viktad ER</b> = '
+              f'(likes + kommentarer×5 + delningar×10 + favoriter×5) / visningar, '
+              f'visad som median per grupp. Klicka en kategori för att se inläggen, '
+              f'en kolumnrubrik för att sortera.</p>'
+              f'<div class="stat">{stat(pct(med_org),"median ER organiskt","ac-pink")}'
+              f'{stat(pct(med_boost),"median ER boostat","ac-blue")}'
               f'{stat(verdict,"trend organiskt")}'
-              f'{stat(str(len(org))+" / "+str(len(boost)),"organiska / boostade")}</div>')
+              f'{stat(str(len(org))+" / "+str(len(boost)),"organiska / boostade")}</div>'
+              f'</header>')
 
     seg = ('<div class="seg"><span class="lbl">Segment</span>'
            '<button class="pill active" data-seg="boost">Boostat</button>'
