@@ -224,21 +224,21 @@ function hookKey(p){if(p.har_hook)return p.har_hook==='ja'?'hook':'ingen hook';
   if(!p.hook_typ)return '';return p.hook_typ==='ovrigt'?'ingen/oklar hook':'hook: '+p.hook_typ;}
 
 const DIMS = [
-  {id:'strategi',label:'Strategi (kampanj / always on)',key:p=>[p.strategi]},
-  {id:'kategori',label:'Kategori',key:p=>[p.kategori]},
-  {id:'format',label:'Format',key:p=>[p.format]},
-  {id:'typ',label:'Typ (video/bild)',key:p=>[p.typ]},
-  {id:'hook',label:'Hook',key:p=>[hookKey(p)]},
+  {id:'strategi',label:'Strategi (kampanj / always on)',key:p=>[p.strategi],field:'strategi'},
+  {id:'kategori',label:'Kategori',key:p=>[p.kategori],field:'kategori'},
+  {id:'format',label:'Format',key:p=>[p.format],field:'format'},
+  {id:'typ',label:'Typ (video/bild)',key:p=>[p.typ],field:'typ'},
+  {id:'hook',label:'Hook',key:p=>[hookKey(p)],field:'har_hook'},
   {id:'cta',label:'Call to action',key:p=>[p.har_cta==='ja'?'CTA':'ingen CTA']},
   {id:'alk',label:'Alkohol i bild',key:p=>['alkohol: '+p.alk]},
   {id:'alkkontext',label:'Alkohol-kontext',key:p=>[p.alkkontext]},
 ];
 if(window.HAS_TONE){
-  DIMS.splice(5,0,{id:'ton',label:'Budskapston (budskap vs lättsamt)',key:p=>[p.budskapston]},
+  DIMS.splice(5,0,{id:'ton',label:'Budskapston (budskap vs lättsamt)',key:p=>[p.budskapston],field:'budskapston'},
                  {id:'teman',label:'Budskap-teman',key:p=>p.teman});
 }
 if(window.HAS_OCCASION){
-  DIMS.push({id:'hogtid',label:'Högtid / tillfälle',key:p=>p.hogtid?[p.hogtid]:[]});
+  DIMS.push({id:'hogtid',label:'Högtid / tillfälle',key:p=>p.hogtid?[p.hogtid]:[],field:'hogtid'});
 }
 
 const sortState = {};   // dimId -> {col, dir}
@@ -468,6 +468,14 @@ applyOv();
    + värde och applicera på alla markerade på en gång. Sparas som vanliga
    overrides (KV i molnet). */
 let bulkField='har_hook';
+// Vilket redigerbart fält hör en kryssruta till? (dvs vilken dimension man står
+// i.) Används för att förvälja rätt fält i bulkraden när man börjar markera.
+function ctxField(el){
+  const host=el.closest&&el.closest('[id^="dim-"]');
+  if(!host)return null;
+  const d=DIMS.find(x=>'dim-'+x.id===host.id);
+  return d&&d.field&&window.EDITABLE[d.field]?d.field:null;
+}
 function reflectSel(){                       // spegla SEL till alla kryssrutor + kort utan full omritning
   document.querySelectorAll('.selbox').forEach(cb=>{
     const on=SEL.has(cb.dataset.id);cb.checked=on;
@@ -476,8 +484,14 @@ function reflectSel(){                       // spegla SEL till alla kryssrutor 
     const ids=(cb.dataset.ids||'').split(',').filter(Boolean);
     cb.checked=ids.length>0&&ids.every(id=>SEL.has(id));});
 }
-function toggleSel(id,on){on?SEL.add(id):SEL.delete(id);reflectSel();updateBulkBar();}
-function toggleSelAll(ids,on){ids.forEach(id=>on?SEL.add(id):SEL.delete(id));reflectSel();updateBulkBar();}
+function toggleSel(id,on,ctx){const wasEmpty=SEL.size===0;
+  on?SEL.add(id):SEL.delete(id);
+  if(on&&wasEmpty&&ctx)bulkField=ctx;   // förvälj dimensionens fält vid första markeringen
+  reflectSel();updateBulkBar();}
+function toggleSelAll(ids,on,ctx){const wasEmpty=SEL.size===0;
+  ids.forEach(id=>on?SEL.add(id):SEL.delete(id));
+  if(on&&wasEmpty&&ctx)bulkField=ctx;
+  reflectSel();updateBulkBar();}
 function bulkValueOptions(){
   return (window.EDITABLE[bulkField]||[]).map(v=>`<option value="${esc(v)}">${esc(v||'(tom)')}</option>`).join('');}
 function updateBulkBar(){
@@ -565,9 +579,9 @@ document.addEventListener('click',e=>{
 });
 document.addEventListener('change',e=>{
   const cb=e.target.closest('.selbox');
-  if(cb){toggleSel(cb.dataset.id,cb.checked);return;}
+  if(cb){toggleSel(cb.dataset.id,cb.checked,ctxField(cb));return;}
   const ca=e.target.closest('.selallbox');
-  if(ca){toggleSelAll((ca.dataset.ids||'').split(',').filter(Boolean),ca.checked);return;}
+  if(ca){toggleSelAll((ca.dataset.ids||'').split(',').filter(Boolean),ca.checked,ctxField(ca));return;}
   if(e.target.id==='bulkField'){bulkField=e.target.value;
     const vs=document.getElementById('bulkValue');if(vs)vs.innerHTML=bulkValueOptions();return;}
 });
