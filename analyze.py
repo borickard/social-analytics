@@ -394,7 +394,8 @@ function rankCard(p,M){
 }
 function renderRank(){
   const M=METRICS[rankMetric];
-  const best=M.both?(rankDir==='top'):true, dirLbl=best?'Mest':'Svagast';
+  const best=M.both?(rankDir==='top'):true;
+  const dirLbl=M.both?(best?'Högst engagemang':'Lägst engagemang'):'Mest';
   const mk=(posts)=>{let c=posts.slice();
     if(M.minv)c=c.filter(p=>p.views>=MIN_VIEWS);
     c=c.sort((a,b)=>best?M.get(b)-M.get(a):M.get(a)-M.get(b)).slice(0,10);
@@ -405,8 +406,8 @@ function renderRank(){
   if(segment!=='org')cols.push(['boostat',bo]);
   const pills=Object.keys(METRICS).map(k=>`<button class="pill mini${k===rankMetric?' active':''}" data-metric="${k}">${METRICS[k].label}</button>`).join('');
   const dirToggle=M.both?('<span class="lbl" style="margin-left:18px">Visa</span>'+
-    `<button class="pill mini${rankDir==='top'?' active':''}" data-rankdir="top">Mest</button>`+
-    `<button class="pill mini${rankDir==='bottom'?' active':''}" data-rankdir="bottom">Svagast</button>`):'';
+    `<button class="pill mini${rankDir==='top'?' active':''}" data-rankdir="top">Högst engagemang</button>`+
+    `<button class="pill mini${rankDir==='bottom'?' active':''}" data-rankdir="bottom">Lägst engagemang</button>`):'';
   const h=`<div class="metricbar"><span class="lbl">Sortera efter</span>${pills}${dirToggle}</div>`+
     `<div class="two">${cols.map(c=>`<div><h3>${dirLbl} – ${c[0]}</h3>${mk(c[1])}</div>`).join('')}</div>`;
   document.getElementById('rank').innerHTML=h;
@@ -1107,7 +1108,7 @@ def main():
            f'<div id="dims"></div>'
            f'<section><h2>Topplistor</h2>'
            f'<p class="muted">Välj vad som ska rangordnas. För viktad ER kan du växla '
-           f'mellan <b>Mest</b> och <b>Svagast</b> (filtrerat till ≥ {3000} visningar för '
+           f'mellan <b>Högst</b> och <b>Lägst engagemang</b> (filtrerat till ≥ {3000} visningar för '
            f'stabilare siffror); för delningar, kommentarer m.m. visas flest. '
            f'Klicka för att öppna på TikTok.</p><div id="rank"></div></section>'
            f'<details class="ovdetails"><summary id="ovhead">Manuellt ändrade</summary>'
