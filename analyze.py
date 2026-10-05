@@ -398,23 +398,45 @@ function renderRank(){
     c=c.sort((a,b)=>best?M.get(b)-M.get(a):M.get(a)-M.get(b)).slice(0,10);
     return c.length?`<div class="cards col">${c.map(p=>rankCard(p,M)).join('')}</div>`:'<p class="muted">Inga inlägg.</p>';};
   const org=timePosts().filter(p=>p.organic), bo=timePosts().filter(p=>!p.organic);
+  const cols=[];                              // följer segment-valet
+  if(segment!=='boost')cols.push(['organiskt',org]);
+  if(segment!=='org')cols.push(['boostat',bo]);
   const pills=Object.keys(METRICS).map(k=>`<button class="pill mini${k===rankMetric?' active':''}" data-metric="${k}">${METRICS[k].label}</button>`).join('');
   let h=`<div class="metricbar"><span class="lbl">Sortera efter</span>${pills}</div>`+
-    `<div class="two"><div><h3>Mest – organiskt</h3>${mk(org,true)}</div>`+
-    `<div><h3>Mest – boostat</h3>${mk(bo,true)}</div></div>`;
+    `<div class="two">${cols.map(c=>`<div><h3>Mest – ${c[0]}</h3>${mk(c[1],true)}</div>`).join('')}</div>`;
   if(M.both)  // botten (svagast) bara meningsfullt för ER
-    h+=`<div class="two"><div><h3>Svagast – organiskt</h3>${mk(org,false)}</div>`+
-       `<div><h3>Svagast – boostat</h3>${mk(bo,false)}</div></div>`;
+    h+=`<div class="two">${cols.map(c=>`<div><h3>Svagast – ${c[0]}</h3>${mk(c[1],false)}</div>`).join('')}</div>`;
   document.getElementById('rank').innerHTML=h;
 }
 
-function quartersAgg(posts){
-  const m={};
-  posts.forEach(p=>{const d=p.date||'';if(d.length>=7){const y=+d.slice(0,4),mo=+d.slice(5,7);
-    if(y&&mo){const q=((mo-1)/3|0)+1,key=y*10+q;
-      (m[key]=m[key]||{lbl:'Q'+q+'-'+String(y).slice(2),ers:[]}).ers.push(p.er);}}});
-  return Object.keys(m).map(Number).sort((a,b)=>a-b).map(k=>[m[k].lbl,median(m[k].ers),m[k].ers.length]);
+// Tidsupplösning i grafen beror på vald period: ~1 mån → dag, ~3 mån → vecka,
+// ~1–1,5 år → månad, längre → kvartal.
+function bucketKey(d,gran){
+  if(gran==='day')return [d,(+d.slice(8,10))+'/'+(+d.slice(5,7))];
+  if(gran==='week'){const dt=new Date(d+'T00:00:00Z'),dow=(dt.getUTCDay()+6)%7;
+    dt.setUTCDate(dt.getUTCDate()-dow);const ws=dt.toISOString().slice(0,10);
+    return [ws,(+ws.slice(8,10))+'/'+(+ws.slice(5,7))];}
+  if(gran==='month'){const MN=['jan','feb','mar','apr','maj','jun','jul','aug','sep','okt','nov','dec'];
+    return [d.slice(0,7),MN[(+d.slice(5,7))-1]+' '+d.slice(2,4)];}
+  const y=+d.slice(0,4),q=(((+d.slice(5,7))-1)/3|0)+1;
+  return [y+'-Q'+q,'Q'+q+'-'+String(y).slice(2)];
 }
+function timeAgg(posts,gran){
+  gran=gran||'quarter';const m={};
+  posts.forEach(p=>{const d=(p.date||'').slice(0,10);if(d.length<7)return;
+    const kl=bucketKey(d,gran);(m[kl[0]]=m[kl[0]]||{lbl:kl[1],ers:[]}).ers.push(p.er);});
+  return Object.keys(m).sort().map(k=>[m[k].lbl,median(m[k].ers),m[k].ers.length]);
+}
+function chartGran(){
+  let from=periodFrom,to=periodTo;
+  if(!from||!to){const ds=segPosts().map(p=>p.date).filter(Boolean).sort();
+    from=from||ds[0];to=to||ds[ds.length-1];}
+  if(!from||!to)return 'quarter';
+  const span=(new Date(to)-new Date(from))/864e5;
+  return span<=45?'day':span<=130?'week':span<=600?'month':'quarter';
+}
+const GRAN_LBL={day:'per dag',week:'per vecka',month:'per månad',quarter:'per kvartal'};
+function quartersAgg(posts){return timeAgg(posts,chartGran());}
 function trendOf(series){
   // Linjär regression på kvartalens median-ER (i %). Domen är RELATIV: total
   // förändring över perioden jämförs med nivån (medianen), så samma tröskel
@@ -447,14 +469,14 @@ function renderOverview(){
      .map(([k,v,t])=>`<span class="im"><span class="imi">${ICON[k]}</span><b>${fmtNum(v)}</b> ${t}</span>`).join('');
 }
 function renderChart(){
-  const series=quartersAgg(segPosts());
+  const gran=chartGran(),series=timeAgg(segPosts(),gran);
   const lbl={alla:'alla',org:'organiskt',boost:'boostat'}[segment];
-  document.getElementById('chart-title').textContent='Engagemang över tid ('+lbl+', per kvartal)';
+  document.getElementById('chart-title').textContent='Engagemang över tid ('+lbl+', '+GRAN_LBL[gran]+')';
   const L=levelsOf(segPosts());
   const lv=document.getElementById('levels');
   if(lv)lv.innerHTML=`Nivåer för <b>${lbl}</b> (datadrivet, kvartiler): lågt &lt; ${fmtPct(L.q1)} · medel · högt &gt; ${fmtPct(L.q3)} — median ${fmtPct(L.med)}.`;
   const note=document.getElementById('chart-note'),host=document.getElementById('chart');
-  if(series.length<2){host.innerHTML='<p class="muted" style="padding:12px">För få kvartal i detta segment.</p>';note.textContent='';return;}
+  if(series.length<2){host.innerHTML='<p class="muted" style="padding:12px">För få datapunkter i perioden/segmentet.</p>';note.textContent='';return;}
   const W=960,H=340,pl=48,pr=58,pt=26,pb=44;
   const ys=series.map(s=>s[1]*100),ymax=Math.max(...ys)*1.18||1;
   const X=i=>pl+i*(W-pl-pr)/(series.length-1),Y=v=>H-pb-(v/ymax)*(H-pt-pb),base=Y(0);
@@ -475,7 +497,7 @@ function renderChart(){
   const area=`M ${P[0][0].toFixed(1)} ${base.toFixed(1)} `+P.map(p=>`L ${p[0].toFixed(1)} ${p[1].toFixed(1)}`).join(' ')+` L ${P[P.length-1][0].toFixed(1)} ${base.toFixed(1)} Z`;
   const dots=P.map((p,i)=>`<circle cx="${p[0].toFixed(1)}" cy="${p[1].toFixed(1)}" r="4" fill="#1359c5" stroke="#fff" stroke-width="2" style="pointer-events:none"/>`).join('');
   const hits=P.map((p,i)=>`<circle class="cdot" cx="${p[0].toFixed(1)}" cy="${p[1].toFixed(1)}" r="13" fill="transparent" data-q="${series[i][0]}" data-er="${pctLbl(ys[i])}" data-n="${series[i][2]}"/>`).join('');
-  const vlab=P.map((p,i)=>`<text x="${p[0].toFixed(1)}" y="${(p[1]-11).toFixed(1)}" text-anchor="middle" font-size="9.5" font-weight="700" fill="#242f55">${pctLbl(ys[i])}</text>`).join('');
+  const vlab=series.length<=16?P.map((p,i)=>`<text x="${p[0].toFixed(1)}" y="${(p[1]-11).toFixed(1)}" text-anchor="middle" font-size="9.5" font-weight="700" fill="#242f55">${pctLbl(ys[i])}</text>`).join(''):'';
   const st=Math.max(1,Math.ceil(series.length/16));let xl='';
   for(let i=0;i<series.length;i+=st)xl+=`<text x="${X(i).toFixed(1)}" y="${H-pb+20}" text-anchor="middle" font-size="10.5" fill="#8b857a">${series[i][0]}</text>`;
   host.innerHTML=`<svg viewBox="0 0 ${W} ${H}" width="100%" style="width:100%">`+
@@ -489,7 +511,7 @@ function renderChart(){
   const early=median(series.slice(0,k).map(s=>s[1]*100)),recent=median(series.slice(-k).map(s=>s[1]*100));
   const chg=early?Math.round((recent-early)/early*100):0;
   const dir=chg<0?`ungefär ${Math.abs(chg)} % lägre`:chg>0?`ungefär ${chg} % högre`:'på ungefär samma nivå';
-  note.innerHTML=`<strong>Trend: ${tr.verdict}</strong> Engagemanget per kvartal har gått från ${pctLbl(early)} i de tidiga kvartalen till ${pctLbl(recent)} i de senaste – ${dir}. Håll muspekaren på en punkt för antal inlägg det kvartalet.`;
+  note.innerHTML=`<strong>Trend: ${tr.verdict}</strong> Engagemanget har gått från ${pctLbl(early)} i början av perioden till ${pctLbl(recent)} i slutet – ${dir}. Håll muspekaren på en punkt för eng.rate och antal inlägg.`;
 }
 function renderOverridden(){
   const el=document.getElementById('overridden');if(!el)return;
