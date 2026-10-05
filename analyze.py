@@ -421,7 +421,7 @@ function bucketKey(d,gran){
     dt.setUTCDate(dt.getUTCDate()-dow);const ws=dt.toISOString().slice(0,10);
     return [ws,'v'+isoWeek(ws)];}
   if(gran==='month'){const MN=['jan','feb','mar','apr','maj','jun','jul','aug','sep','okt','nov','dec'];
-    return [d.slice(0,7),MN[(+d.slice(5,7))-1]+' '+d.slice(2,4)];}
+    return [d.slice(0,7),MN[(+d.slice(5,7))-1]+' -'+d.slice(2,4)];}
   const y=+d.slice(0,4),q=(((+d.slice(5,7))-1)/3|0)+1;
   return [y+'-Q'+q,'Q'+q+'-'+String(y).slice(2)];
 }
