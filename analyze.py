@@ -411,11 +411,15 @@ function renderRank(){
 
 // Tidsupplösning i grafen beror på vald period: ~1 mån → dag, ~3 mån → vecka,
 // ~1–1,5 år → månad, längre → kvartal.
+function isoWeek(ws){const d=new Date(ws+'T00:00:00Z'),dn=(d.getUTCDay()+6)%7;
+  d.setUTCDate(d.getUTCDate()-dn+3);const ft=new Date(Date.UTC(d.getUTCFullYear(),0,4));
+  const fn=(ft.getUTCDay()+6)%7;ft.setUTCDate(ft.getUTCDate()-fn+3);
+  return 1+Math.round((d-ft)/6048e5);}
 function bucketKey(d,gran){
   if(gran==='day')return [d,(+d.slice(8,10))+'/'+(+d.slice(5,7))];
   if(gran==='week'){const dt=new Date(d+'T00:00:00Z'),dow=(dt.getUTCDay()+6)%7;
     dt.setUTCDate(dt.getUTCDate()-dow);const ws=dt.toISOString().slice(0,10);
-    return [ws,(+ws.slice(8,10))+'/'+(+ws.slice(5,7))];}
+    return [ws,'v'+isoWeek(ws)];}
   if(gran==='month'){const MN=['jan','feb','mar','apr','maj','jun','jul','aug','sep','okt','nov','dec'];
     return [d.slice(0,7),MN[(+d.slice(5,7))-1]+' '+d.slice(2,4)];}
   const y=+d.slice(0,4),q=(((+d.slice(5,7))-1)/3|0)+1;
