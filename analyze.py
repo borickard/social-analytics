@@ -1100,7 +1100,7 @@ def main():
            f'<style>{css}</style>'
            f'</head><body><div class="wrap">{header}{seg}{charts}{search}'
            f'<div id="dims"></div>'
-           f'<section><h2>Topplistor (organiskt vs boostat)</h2>'
+           f'<section><h2>Topplistor</h2>'
            f'<p class="muted">Välj vad som ska rangordnas. För viktad ER visas både '
            f'starkast och svagast (filtrerat till ≥ {3000} visningar för '
            f'stabilare siffror); för delningar, kommentarer m.m. visas flest. '
