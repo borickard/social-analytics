@@ -249,7 +249,14 @@ function levelsOf(posts){const s=posts.map(p=>p.er).sort((a,b)=>a-b);return{q1:q
 const ORG_L=levelsOf(POSTS.filter(p=>p.organic)),BOOST_L=levelsOf(POSTS.filter(p=>!p.organic));
 POSTS.forEach(p=>{const L=p.organic?ORG_L:BOOST_L;p.band=p.er>L.q3?'hög':(p.er<L.q1?'låg':'medel');});
 
-function segPosts(){return POSTS.filter(p=>segment==='alla'?true:segment==='org'?p.organic:!p.organic);}
+// Tidsfilter: periodFrom/periodTo (ISO 'YYYY-MM-DD' eller null). Allt nedanför
+// (översikt, graf, dimensioner, topplistor, sök) filtreras på publiceringsdatum.
+let periodFrom=null, periodTo=null;
+function inPeriod(p){const d=p.date||'';
+  if(periodFrom&&(!d||d<periodFrom))return false;
+  if(periodTo&&(!d||d>periodTo))return false;return true;}
+function timePosts(){return POSTS.filter(inPeriod);}                 // bara tidsfilter
+function segPosts(){return timePosts().filter(p=>segment==='alla'?true:segment==='org'?p.organic:!p.organic);}
 function hookKey(p){if(p.har_hook)return p.har_hook==='ja'?'hook':'ingen hook';
   if(!p.hook_typ)return '';return p.hook_typ==='ovrigt'?'ingen/oklar hook':'hook: '+p.hook_typ;}
 
@@ -366,7 +373,7 @@ function card(p,compact){
   }
   return `<div class="pc${sel?' sel':''}${exp?' expanded':''}">${check}`+
     `<a class="pcimg" href="${esc(p.url)}" target="_blank" rel="noopener">${img}`+
-      `<span class="er">${erInner(p)}</span>${benchHTML(p)}`+
+      `<div class="pcoverlay"><span class="er">${erInner(p)}</span>${benchHTML(p)}</div>`+
       `${ovd?'<span class="ovchip">ändrad</span>':''}</a>`+
     `<div class="pcm"><div class="metrics">${metricsHTML(p)}</div>${cap}${foot}</div></div>`;
 }
@@ -390,7 +397,7 @@ function renderRank(){
     if(M.minv)c=c.filter(p=>p.views>=MIN_VIEWS);
     c=c.sort((a,b)=>best?M.get(b)-M.get(a):M.get(a)-M.get(b)).slice(0,10);
     return c.length?`<div class="cards col">${c.map(p=>rankCard(p,M)).join('')}</div>`:'<p class="muted">Inga inlägg.</p>';};
-  const org=POSTS.filter(p=>p.organic), bo=POSTS.filter(p=>!p.organic);
+  const org=timePosts().filter(p=>p.organic), bo=timePosts().filter(p=>!p.organic);
   const pills=Object.keys(METRICS).map(k=>`<button class="pill mini${k===rankMetric?' active':''}" data-metric="${k}">${METRICS[k].label}</button>`).join('');
   let h=`<div class="metricbar"><span class="lbl">Sortera efter</span>${pills}</div>`+
     `<div class="two"><div><h3>Mest – organiskt</h3>${mk(org,true)}</div>`+
@@ -420,6 +427,25 @@ function trendOf(series){
   const rel=total/lvl;
   return{sl,total,verdict:rel>0.15?'uppåt ↗':rel<-0.15?'nedåt ↘':'stabilt →'};
 }
+function renderOverview(){
+  const ps=segPosts(),n=ps.length;
+  const sum=f=>ps.reduce((a,p)=>a+(p[f]||0),0);
+  const sumV=sum('views'),sumL=sum('likes'),sumK=sum('kommentarer'),sumD=sum('delningar'),sumS=sum('sparade');
+  const erMed=n?median(ps.map(p=>p.er)):0;
+  const wSum=ps.reduce((a,p)=>a+(p.likes+p.kommentarer*5+p.delningar*10+p.sparade*5),0);
+  const erSnitt=sumV?wSum/sumV:0;
+  const tr=trendOf(quartersAgg(ps));
+  const tile=(v,l,ac)=>`<div class="c${ac?' '+ac:''}"><div class="big">${v}</div><div class="muted">${l}</div></div>`;
+  const sr=document.getElementById('statrow');
+  if(sr)sr.innerHTML=tile(fmtNum(n),'inlägg')+tile(fmtNum(sumV),'visningar')+
+    tile(n?fmtPct(erMed):'–','eng.rate median','ac-pink')+
+    tile(n?fmtPct(erSnitt):'–','eng.rate snitt','ac-blue')+
+    tile(tr.verdict,'trend');
+  const ir=document.getElementById('introw');
+  if(ir)ir.innerHTML='<span class="introw-lbl">Interaktioner</span>'+
+    [['like',sumL,'likes'],['comment',sumK,'kommentarer'],['share',sumD,'delningar'],['save',sumS,'sparade']]
+     .map(([k,v,t])=>`<span class="im"><span class="imi">${ICON[k]}</span><b>${fmtNum(v)}</b> ${t}</span>`).join('');
+}
 function renderChart(){
   const series=quartersAgg(segPosts());
   const lbl={alla:'alla',org:'organiskt',boost:'boostat'}[segment];
@@ -447,7 +473,8 @@ function renderChart(){
   const P=series.map((s,i)=>[X(i),Y(ys[i])]);
   const line=P.map(p=>`${p[0].toFixed(1)},${p[1].toFixed(1)}`).join(' ');
   const area=`M ${P[0][0].toFixed(1)} ${base.toFixed(1)} `+P.map(p=>`L ${p[0].toFixed(1)} ${p[1].toFixed(1)}`).join(' ')+` L ${P[P.length-1][0].toFixed(1)} ${base.toFixed(1)} Z`;
-  const dots=P.map((p,i)=>`<circle cx="${p[0].toFixed(1)}" cy="${p[1].toFixed(1)}" r="4" fill="#1359c5" stroke="#fff" stroke-width="2"><title>${series[i][0]}: ${ys[i].toFixed(2)} % (n=${series[i][2]})</title></circle>`).join('');
+  const dots=P.map((p,i)=>`<circle cx="${p[0].toFixed(1)}" cy="${p[1].toFixed(1)}" r="4" fill="#1359c5" stroke="#fff" stroke-width="2" style="pointer-events:none"/>`).join('');
+  const hits=P.map((p,i)=>`<circle class="cdot" cx="${p[0].toFixed(1)}" cy="${p[1].toFixed(1)}" r="13" fill="transparent" data-q="${series[i][0]}" data-er="${pctLbl(ys[i])}" data-n="${series[i][2]}"/>`).join('');
   const vlab=P.map((p,i)=>`<text x="${p[0].toFixed(1)}" y="${(p[1]-11).toFixed(1)}" text-anchor="middle" font-size="9.5" font-weight="700" fill="#242f55">${pctLbl(ys[i])}</text>`).join('');
   const st=Math.max(1,Math.ceil(series.length/16));let xl='';
   for(let i=0;i<series.length;i+=st)xl+=`<text x="${X(i).toFixed(1)}" y="${H-pb+20}" text-anchor="middle" font-size="10.5" fill="#8b857a">${series[i][0]}</text>`;
@@ -456,7 +483,7 @@ function renderChart(){
     `<stop offset="0" stop-color="#1359c5" stop-opacity=".22"/><stop offset="1" stop-color="#1359c5" stop-opacity="0"/></linearGradient></defs>`+
     `${grid}${band}${medline}<path d="${area}" fill="url(#iqarea)"/>`+
     `<polyline points="${line}" fill="none" stroke="#1359c5" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>`+
-    `${dots}${vlab}${xl}</svg>`;
+    `${dots}${vlab}${xl}${hits}</svg><div id="charttip" class="charttip" hidden></div>`;
   const tr=trendOf(series);
   const k=Math.min(3,series.length);
   const early=median(series.slice(0,k).map(s=>s[1]*100)),recent=median(series.slice(-k).map(s=>s[1]*100));
@@ -485,7 +512,7 @@ function renderSearch(){
   const info=document.getElementById('searchinfo'),res=document.getElementById('searchres');
   if(!q){info.textContent='';res.innerHTML='';return;}
   if(q.length<2){info.textContent='Skriv minst två tecken.';res.innerHTML='';return;}
-  const hits=POSTS.filter(p=>(p.sok||'').includes(q));
+  const hits=timePosts().filter(p=>(p.sok||'').includes(q));
   info.innerHTML=`<b>${hits.length}</b> inlägg innehåller ”${esc(q)}” i beskrivningen.`;
   if(!hits.length){res.innerHTML='';return;}
   const ids=hits.map(p=>p.id),allsel=ids.every(id=>SEL.has(id));
@@ -506,7 +533,7 @@ function refreshMore(){
     btn.hidden=!clipped;if(clipped)btn.textContent='läs mer';
   });
 }
-function renderAll(){renderChart();renderOverridden();DIMS.forEach(renderDim);renderRank();renderSearch();
+function renderAll(){renderOverview();renderChart();renderOverridden();DIMS.forEach(renderDim);renderRank();renderSearch();
   requestAnimationFrame(refreshMore);}
 
 /* ---- Manuella rättelser (overrides) -------------------------------------
@@ -663,6 +690,35 @@ document.querySelectorAll('.pill[data-seg]').forEach(b=>b.addEventListener('clic
   renderAll();}));
 const _sb=document.getElementById('searchbox');
 if(_sb)_sb.addEventListener('input',renderSearch);
+// Chart-tooltip (snabb, egen – visar ER + antal inlägg för kvartalet).
+(function(){const chart=document.getElementById('chart');if(!chart)return;
+  chart.addEventListener('mouseover',e=>{const c=e.target.closest('.cdot');if(!c)return;
+    const tip=document.getElementById('charttip');if(!tip)return;
+    tip.innerHTML=`<b>${c.dataset.q}</b><span>Eng.rate ${c.dataset.er}</span><span>${c.dataset.n} inlägg</span>`;
+    const r=c.getBoundingClientRect(),cr=chart.getBoundingClientRect();
+    tip.style.left=(r.left-cr.left+r.width/2)+'px';
+    tip.style.top=(r.top-cr.top-10)+'px';tip.hidden=false;});
+  chart.addEventListener('mouseout',e=>{if(e.target.closest('.cdot')){const t=document.getElementById('charttip');if(t)t.hidden=true;}});
+})();
+// Tidsperiod: datumfält + snabbval. Referens = senaste inläggsdatum i datan.
+const _dates=POSTS.map(p=>p.date).filter(Boolean).sort();
+const DMIN=_dates[0]||'', DMAX=_dates[_dates.length-1]||'';
+function daysAgo(nd){if(!DMAX)return '';const d=new Date(DMAX);d.setDate(d.getDate()-nd);return d.toISOString().slice(0,10);}
+function setPeriod(from,to){periodFrom=from||null;periodTo=to||null;
+  const pf=document.getElementById('pfrom'),pt=document.getElementById('pto');
+  if(pf)pf.value=periodFrom||'';if(pt)pt.value=periodTo||'';
+  document.querySelectorAll('.pill[data-period]').forEach(b=>{
+    const act=(b.dataset.period==='all'&&!periodFrom&&!periodTo);
+    b.classList.toggle('active',act);});
+  renderAll();}
+(function(){const pf=document.getElementById('pfrom'),pt=document.getElementById('pto');
+  if(pf){pf.min=pt.min=DMIN;pf.max=pt.max=DMAX;
+    pf.addEventListener('change',()=>setPeriod(pf.value,pt.value));
+    pt.addEventListener('change',()=>setPeriod(pf.value,pt.value));}
+  document.querySelectorAll('.pill[data-period]').forEach(b=>b.addEventListener('click',()=>{
+    const v=b.dataset.period;
+    if(v==='all')setPeriod('','');
+    else setPeriod(daysAgo(+v),DMAX);}));})();
 // "Logga ut" visas bara när sajten serveras (dvs bakom inloggning på Vercel).
 if(AUTOSAVE){const _ll=document.getElementById('logoutlink');if(_ll)_ll.hidden=false;}
 function setCols(n){n=Math.min(5,Math.max(1,n|0))||3;
@@ -772,6 +828,27 @@ def main():
       .stat .c.ac-blue{border-top:3px solid var(--iq-blue)}
       .stat .big{font-family:var(--disp);font-size:27px;font-weight:800;letter-spacing:-.02em;margin-bottom:2px;color:#fff}
       .stat .muted{font-size:12.5px;color:rgba(255,255,255,.7)}
+      /* interaktioner-rad i hero */
+      .introw{display:flex;flex-wrap:wrap;align-items:center;gap:18px;margin-top:14px}
+      .introw-lbl{font-size:11px;text-transform:uppercase;letter-spacing:.1em;font-weight:700;color:var(--iq-pink)}
+      .im{display:inline-flex;align-items:center;gap:6px;font-size:13.5px;color:rgba(255,255,255,.82);
+        font-variant-numeric:tabular-nums}
+      .im b{color:#fff;font-weight:700}
+      .imi{width:15px;height:15px;color:rgba(255,255,255,.6);display:inline-flex}.imi svg{width:15px;height:15px}
+      /* periodrad */
+      .period{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:2px 0 10px}
+      .period .lbl{font-size:11px;text-transform:uppercase;letter-spacing:.09em;color:var(--muted);font-weight:700;margin-right:2px}
+      .period .dates{display:inline-flex;align-items:center;gap:7px;font-size:13px;color:var(--muted);margin-left:6px}
+      .period input[type=date]{border:1px solid var(--line);border-radius:10px;padding:6px 10px;
+        font:inherit;font-size:13px;color:var(--ink);background:var(--panel)}
+      .period input[type=date]:focus{outline:none;border-color:var(--iq-blue)}
+      /* chart-tooltip */
+      .charttip{position:absolute;z-index:10;transform:translate(-50%,-100%);pointer-events:none;
+        background:var(--iq-navy);color:#fff;padding:7px 10px;border-radius:9px;font-size:11.5px;
+        line-height:1.35;box-shadow:0 8px 20px rgba(0,0,0,.3);white-space:nowrap;
+        display:flex;flex-direction:column;gap:1px}
+      .charttip b{font-size:12.5px}
+      .charttip span{opacity:.82;font-weight:500}
       /* segment-piller */
       .seg{position:sticky;top:0;z-index:5;display:flex;align-items:center;gap:8px;
         flex-wrap:wrap;padding:12px 0;
@@ -793,7 +870,7 @@ def main():
       /* tabeller */
       section{overflow-x:auto}
       /* tidsgraf */
-      #chart{background:var(--panel);border:1px solid var(--line);border-radius:18px;
+      #chart{position:relative;background:var(--panel);border:1px solid var(--line);border-radius:18px;
         padding:14px 14px 6px;margin-top:2px}
       #chart svg{display:block;overflow:visible}
       #chart-note{margin-top:14px;background:var(--panel);border:1px solid var(--line);
@@ -875,8 +952,10 @@ def main():
       .cards:not(.col) .pc{flex-direction:column;height:100%}
       .cards:not(.col) .pcimg{width:100%}
       .cards:not(.col) .pcimg img{width:100%;aspect-ratio:3/4;max-height:360px}
-      .cards:not(.col) .er{bottom:10px;left:10px}
-      .cards:not(.col) .bench{bottom:10px;right:10px;max-width:calc(100% - 94px)}
+      .cards:not(.col) .pcoverlay{position:absolute;left:0;right:0;bottom:0;display:flex;
+        align-items:flex-end;justify-content:space-between;gap:8px;padding:10px}
+      .cards:not(.col) .er,.cards:not(.col) .bench{position:relative;bottom:auto;left:auto;right:auto}
+      .cards:not(.col) .bench{max-width:calc(100% - 92px)}
       .cards:not(.col) .pcm{padding:11px 13px 12px}
       :root[data-cols="1"] .cards:not(.col) .pcimg img{max-height:460px}
       /* kompakta listor (topplistor + manuellt ändrade): bild vänster, ER inline */
@@ -940,12 +1019,10 @@ def main():
               f'<h1>IQ × TikTok Dashboard</h1>'
               f'<p class="lead">{len(ana)} analyserade inlägg. <b>Viktad ER</b> = '
               f'(likes + kommentarer×5 + delningar×10 + favoriter×5) / visningar, '
-              f'visad som median per grupp. Klicka en kategori för att se inläggen, '
-              f'en kolumnrubrik för att sortera.</p>'
-              f'<div class="stat">{stat(pct(med_org),"median ER organiskt","ac-pink")}'
-              f'{stat(pct(med_boost),"median ER boostat","ac-blue")}'
-              f'{stat(verdict,"trend organiskt")}'
-              f'{stat(str(len(org))+" / "+str(len(boost)),"organiska / boostade")}</div>'
+              f'visad som median per grupp. Översikten och allt nedanför följer '
+              f'segment- och periodvalet.</p>'
+              f'<div class="stat" id="statrow"></div>'
+              f'<div class="introw" id="introw"></div>'
               f'</header>')
 
     seg = ('<div class="seg"><span class="lbl">Segment</span>'
@@ -956,6 +1033,12 @@ def main():
            + "".join(f'<button class="pill mini" data-cols="{i}">{i}</button>'
                      for i in range(1, 6))
            + '</div>'
+           '<div class="period"><span class="lbl">Period</span>'
+           '<button class="pill mini active" data-period="all">Allt</button>'
+           '<button class="pill mini" data-period="90">Senaste 90 dagar</button>'
+           '<button class="pill mini" data-period="365">Senaste 12 mån</button>'
+           '<span class="dates">Från <input type="date" id="pfrom"> till '
+           '<input type="date" id="pto"></span></div>'
            '<p id="levels" class="muted"></p>')
 
     # Tidsgrafen ritas av JS-appen (uppdateras med segment-väljaren).
