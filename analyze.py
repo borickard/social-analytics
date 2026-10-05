@@ -387,13 +387,15 @@ const METRICS={
   views:{label:'Visningar',get:p=>p.views,fmt:fmtNum},
 };
 let rankMetric='er';
+let rankDir='top';    // 'top' = Mest, 'bottom' = Svagast (bara för viktad ER)
 function rankCard(p,M){
   return `<div class="rankitem"><div class="rankval">${M.fmt(M.get(p))} `+
     `<span class="muted">${M.label.toLowerCase()}</span></div>${card(p,true)}</div>`;
 }
 function renderRank(){
   const M=METRICS[rankMetric];
-  const mk=(posts,best)=>{let c=posts.slice();
+  const best=M.both?(rankDir==='top'):true, dirLbl=best?'Mest':'Svagast';
+  const mk=(posts)=>{let c=posts.slice();
     if(M.minv)c=c.filter(p=>p.views>=MIN_VIEWS);
     c=c.sort((a,b)=>best?M.get(b)-M.get(a):M.get(a)-M.get(b)).slice(0,10);
     return c.length?`<div class="cards col">${c.map(p=>rankCard(p,M)).join('')}</div>`:'<p class="muted">Inga inlägg.</p>';};
@@ -402,10 +404,11 @@ function renderRank(){
   if(segment!=='boost')cols.push(['organiskt',org]);
   if(segment!=='org')cols.push(['boostat',bo]);
   const pills=Object.keys(METRICS).map(k=>`<button class="pill mini${k===rankMetric?' active':''}" data-metric="${k}">${METRICS[k].label}</button>`).join('');
-  let h=`<div class="metricbar"><span class="lbl">Sortera efter</span>${pills}</div>`+
-    `<div class="two">${cols.map(c=>`<div><h3>Mest – ${c[0]}</h3>${mk(c[1],true)}</div>`).join('')}</div>`;
-  if(M.both)  // botten (svagast) bara meningsfullt för ER
-    h+=`<div class="two">${cols.map(c=>`<div><h3>Svagast – ${c[0]}</h3>${mk(c[1],false)}</div>`).join('')}</div>`;
+  const dirToggle=M.both?('<span class="lbl" style="margin-left:18px">Visa</span>'+
+    `<button class="pill mini${rankDir==='top'?' active':''}" data-rankdir="top">Mest</button>`+
+    `<button class="pill mini${rankDir==='bottom'?' active':''}" data-rankdir="bottom">Svagast</button>`):'';
+  const h=`<div class="metricbar"><span class="lbl">Sortera efter</span>${pills}${dirToggle}</div>`+
+    `<div class="two">${cols.map(c=>`<div><h3>${dirLbl} – ${c[0]}</h3>${mk(c[1])}</div>`).join('')}</div>`;
   document.getElementById('rank').innerHTML=h;
 }
 
@@ -686,6 +689,8 @@ document.addEventListener('click',e=>{
     refreshMore();return;}
   const mp=e.target.closest('.pill[data-metric]');
   if(mp){rankMetric=mp.dataset.metric;renderRank();return;}
+  const rd=e.target.closest('.pill[data-rankdir]');
+  if(rd){rankDir=rd.dataset.rankdir;renderRank();return;}
   const cp=e.target.closest('.pill[data-cols]');
   if(cp){setCols(+cp.dataset.cols);return;}
   const act=e.target.closest('[data-act]');
@@ -1101,8 +1106,8 @@ def main():
            f'</head><body><div class="wrap">{header}{seg}{charts}{search}'
            f'<div id="dims"></div>'
            f'<section><h2>Topplistor</h2>'
-           f'<p class="muted">Välj vad som ska rangordnas. För viktad ER visas både '
-           f'starkast och svagast (filtrerat till ≥ {3000} visningar för '
+           f'<p class="muted">Välj vad som ska rangordnas. För viktad ER kan du växla '
+           f'mellan <b>Mest</b> och <b>Svagast</b> (filtrerat till ≥ {3000} visningar för '
            f'stabilare siffror); för delningar, kommentarer m.m. visas flest. '
            f'Klicka för att öppna på TikTok.</p><div id="rank"></div></section>'
            f'<details class="ovdetails"><summary id="ovhead">Manuellt ändrade</summary>'
