@@ -694,7 +694,7 @@ if(_sb)_sb.addEventListener('input',renderSearch);
 (function(){const chart=document.getElementById('chart');if(!chart)return;
   chart.addEventListener('mouseover',e=>{const c=e.target.closest('.cdot');if(!c)return;
     const tip=document.getElementById('charttip');if(!tip)return;
-    tip.innerHTML=`<b>${c.dataset.q}</b><span>Eng.rate ${c.dataset.er}</span><span>${c.dataset.n} inlägg</span>`;
+    tip.innerHTML=`<b>${c.dataset.q}</b><span>Antal inlägg: ${c.dataset.n} st</span><span>Eng.rate: ${c.dataset.er}</span>`;
     const r=c.getBoundingClientRect(),cr=chart.getBoundingClientRect();
     tip.style.left=(r.left-cr.left+r.width/2)+'px';
     tip.style.top=(r.top-cr.top-10)+'px';tip.hidden=false;});
