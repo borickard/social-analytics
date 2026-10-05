@@ -940,8 +940,8 @@ def main():
       .er{position:absolute;background:var(--iq-blue);color:#fff;border-radius:12px;
         padding:7px 11px;box-shadow:0 6px 16px rgba(19,89,197,.42);line-height:1}
       .er b{font-family:var(--disp);font-weight:800;font-size:21px;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
-      .bench{position:absolute;font-size:11px;font-weight:750;padding:5px 10px;border-radius:999px;
-        white-space:nowrap;font-variant-numeric:tabular-nums}
+      .bench{position:absolute;font-size:11px;font-weight:750;padding:5px 11px;border-radius:999px;
+        line-height:1.5;white-space:nowrap;font-variant-numeric:tabular-nums}
       .bench.pos{background:var(--iq-pink);color:var(--iq-navy)}
       .bench.mid{background:#ffffffe6;color:var(--iq-navy)}
       .bench.neg{background:rgba(36,47,85,.78);color:#fff}
