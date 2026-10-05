@@ -399,7 +399,7 @@ function renderRank(){
   const mk=(posts)=>{let c=posts.slice();
     if(M.minv)c=c.filter(p=>p.views>=MIN_VIEWS);
     c=c.sort((a,b)=>best?M.get(b)-M.get(a):M.get(a)-M.get(b)).slice(0,10);
-    return c.length?`<div class="cards col">${c.map(p=>rankCard(p,M)).join('')}</div>`:'<p class="muted">Inga inlägg.</p>';};
+    return c.length?`<div class="ranklist">${c.map(p=>rankCard(p,M)).join('')}</div>`:'<p class="muted">Inga inlägg.</p>';};
   const org=timePosts().filter(p=>p.organic), bo=timePosts().filter(p=>!p.organic);
   const cols=[];                              // följer segment-valet
   if(segment!=='boost')cols.push(['organiskt',org]);
@@ -563,7 +563,7 @@ function refreshMore(){
     btn.hidden=!clipped;if(clipped)btn.textContent='läs mer';
   });
 }
-function renderAll(){renderOverview();renderChart();renderOverridden();DIMS.forEach(renderDim);renderRank();renderSearch();
+function renderAll(){renderOverview();renderChart();DIMS.forEach(renderDim);renderRank();renderSearch();
   requestAnimationFrame(refreshMore);}
 
 /* ---- Manuella rättelser (overrides) -------------------------------------
@@ -1001,6 +1001,8 @@ def main():
       .pc.compact .tip{bottom:auto;top:calc(100% + 8px)}
       .pc.compact .pcc{-webkit-line-clamp:2;min-height:0;margin-top:7px}
       .two{display:flex;gap:20px;flex-wrap:wrap} .two>div{flex:1;min-width:300px}
+      .ranklist{display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr));gap:12px;margin:10px 0}
+      @media(max-width:360px){.ranklist{grid-template-columns:1fr}}
       .ovitem{margin-bottom:10px}
       .ovchg{font-size:12px;color:var(--iq-blue);margin:4px 0 0 114px;font-weight:600}
       .ovdetails{margin-top:34px;border-top:1px solid var(--line);padding-top:14px}
@@ -1111,8 +1113,6 @@ def main():
            f'mellan <b>Högst</b> och <b>Lägst engagemang</b> (filtrerat till ≥ {3000} visningar för '
            f'stabilare siffror); för delningar, kommentarer m.m. visas flest. '
            f'Klicka för att öppna på TikTok.</p><div id="rank"></div></section>'
-           f'<details class="ovdetails"><summary id="ovhead">Manuellt ändrade</summary>'
-           f'<div id="overridden"></div></details>'
            f'</div>{editor}{ovbar}'
            f'<script>window.POSTS={data_js};window.HAS_TONE={str(has_tone).lower()};'
            f'window.HAS_OCCASION={str(has_occasion).lower()};'
