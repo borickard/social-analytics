@@ -409,7 +409,7 @@ function renderRank(){
     `<button class="pill mini${rankDir==='top'?' active':''}" data-rankdir="top">Högst engagemang</button>`+
     `<button class="pill mini${rankDir==='bottom'?' active':''}" data-rankdir="bottom">Lägst engagemang</button>`):'';
   const h=`<div class="metricbar"><span class="lbl">Sortera efter</span>${pills}${dirToggle}</div>`+
-    `<div class="two">${cols.map(c=>`<div><h3>${dirLbl} – ${c[0]}</h3>${mk(c[1])}</div>`).join('')}</div>`;
+    cols.map(c=>`<div class="ranksec"><h3>${dirLbl} – ${c[0]}</h3>${mk(c[1])}</div>`).join('');
   document.getElementById('rank').innerHTML=h;
 }
 
@@ -991,18 +991,21 @@ def main():
       .cards:not(.col) .pcm{padding:11px 13px 12px}
       :root[data-cols="1"] .cards:not(.col) .pcimg img{max-height:460px}
       /* kompakta listor (topplistor + manuellt ändrade): bild vänster, ER inline */
-      .pc.compact{flex-direction:row;gap:12px;padding:10px}
-      .pc.compact .pcimg img{width:92px;height:122px;border-radius:10px}
+      .pc.compact{flex-direction:row;gap:12px;padding:10px;align-items:stretch}
+      .pc.compact .pcimg{align-self:stretch}
+      .pc.compact .pcimg img{width:92px;height:100%;min-height:122px;border-radius:10px;object-fit:cover}
       .pc.compact .pcm{padding:0}
       .erline{display:flex;align-items:center;flex-wrap:wrap;gap:8px}
       .pc.compact .er{position:relative;box-shadow:none;padding:4px 9px;border-radius:9px}
       .pc.compact .er b{font-size:16px}
       .pc.compact .bench{position:relative}
       .pc.compact .tip{bottom:auto;top:calc(100% + 8px)}
-      .pc.compact .pcc{-webkit-line-clamp:2;min-height:0;margin-top:7px}
+      .pc.compact .pcc{-webkit-line-clamp:3;min-height:calc(1.45em * 3);margin-top:7px}
       .two{display:flex;gap:20px;flex-wrap:wrap} .two>div{flex:1;min-width:300px}
-      .ranklist{display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr));gap:12px;margin:10px 0}
+      .ranklist{display:grid;grid-template-columns:repeat(var(--cols),minmax(0,1fr));gap:12px;margin:10px 0 22px}
       @media(max-width:360px){.ranklist{grid-template-columns:1fr}}
+      .rankitem{display:flex;flex-direction:column;height:100%}
+      .rankitem>.pc{flex:1}
       .ovitem{margin-bottom:10px}
       .ovchg{font-size:12px;color:var(--iq-blue);margin:4px 0 0 114px;font-weight:600}
       .ovdetails{margin-top:34px;border-top:1px solid var(--line);padding-top:14px}
