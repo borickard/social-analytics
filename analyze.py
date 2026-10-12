@@ -465,16 +465,17 @@ function renderOverview(){
   const wSum=ps.reduce((a,p)=>a+(p.likes+p.kommentarer*5+p.delningar*10+p.sparade*5),0);
   const erSnitt=sumV?wSum/sumV:0;
   const tr=trendOf(quartersAgg(ps));
+  const fmtBig=x=>fmtNum(x).replace(/ /g,' ');   // vanliga mellanslag → kan radbrytas vid behov
   const tile=(v,l,ac)=>`<div class="c${ac?' '+ac:''}"><div class="big">${v}</div><div class="muted">${l}</div></div>`;
   const sr=document.getElementById('statrow');
-  if(sr)sr.innerHTML=tile(fmtNum(n),'inlägg')+tile(fmtNum(sumV),'visningar')+
+  if(sr)sr.innerHTML=tile(fmtBig(n),'inlägg')+tile(fmtBig(sumV),'visningar')+
     tile(n?fmtPct(erMed):'–','eng.rate median','ac-pink')+
     tile(n?fmtPct(erSnitt):'–','eng.rate snitt','ac-blue')+
-    tile(tr.verdict,'trend');
+    tile(tr.verdict,'trend','wide');
   const ir=document.getElementById('introw');
-  if(ir)ir.innerHTML='<span class="introw-lbl">Interaktioner</span>'+
+  if(ir)ir.innerHTML=
     [['like',sumL,'likes'],['comment',sumK,'kommentarer'],['share',sumD,'delningar'],['save',sumS,'sparade']]
-     .map(([k,v,t])=>`<span class="im"><span class="imi">${ICON[k]}</span><b>${fmtNum(v)}</b> ${t}</span>`).join('');
+     .map(([k,v,t])=>`<div class="imc"><span class="imi">${ICON[k]}</span><div class="imv">${fmtBig(v)}</div><div class="imt">${t}</div></div>`).join('');
 }
 function renderChart(){
   const gran=chartGran(),series=timeAgg(segPosts(),gran);
@@ -927,15 +928,14 @@ def main():
       .wrap{max-width:1340px;margin:0 auto;padding:28px 20px 100px}
       .layout{display:grid;grid-template-columns:1fr;gap:0}
       @media(min-width:1080px){
-        .layout{grid-template-columns:330px minmax(0,1fr);gap:26px;align-items:start}
+        .layout{grid-template-columns:420px minmax(0,1fr);gap:26px;align-items:start}
         .sidebar{position:sticky;top:20px}
         .sidebar .hero{margin-bottom:0}
         .sidebar .hero h1{font-size:26px;margin-bottom:8px}
         .sidebar .hero .lead{font-size:12.5px;margin-bottom:16px}
-        .sidebar .stat{flex-direction:column}
-        .sidebar .stat .c{flex:0 0 auto;min-width:0}
-        .sidebar .introw{flex-direction:column;align-items:flex-start;gap:9px;margin-top:16px;
-          border-top:1px solid rgba(255,255,255,.16);padding-top:14px}
+        .sidebar .stat{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+        .sidebar .stat .c.wide{grid-column:1/-1}
+        .sidebar .introw{grid-template-columns:1fr 1fr}
       }
       /* hero / header-band i IQ-marinblått */
       .hero{position:relative;overflow:hidden;background:var(--iq-navy);color:#fff;
@@ -962,19 +962,23 @@ def main():
       .muted{color:var(--muted)} a{color:inherit}
       /* nyckeltal-kort (i hero) */
       .stat{display:flex;gap:12px;flex-wrap:wrap;margin:0}
-      .stat .c{flex:1;min-width:150px;background:rgba(255,255,255,.10);
-        border:1px solid rgba(255,255,255,.20);border-radius:16px;padding:14px 17px}
+      .stat .c{flex:1 1 150px;min-width:0;background:rgba(255,255,255,.10);
+        border:1px solid rgba(255,255,255,.20);border-radius:16px;padding:14px 16px;overflow:hidden}
       .stat .c.ac-pink{border-top:3px solid var(--iq-pink)}
       .stat .c.ac-blue{border-top:3px solid var(--iq-blue)}
-      .stat .big{font-family:var(--disp);font-size:27px;font-weight:800;letter-spacing:-.02em;margin-bottom:2px;color:#fff}
+      .stat .big{font-family:var(--disp);font-size:24px;font-weight:800;letter-spacing:-.02em;
+        margin-bottom:2px;color:#fff;line-height:1.1;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
       .stat .muted{font-size:12.5px;color:rgba(255,255,255,.7)}
-      /* interaktioner-rad i hero */
-      .introw{display:flex;flex-wrap:wrap;align-items:center;gap:18px;margin-top:14px}
-      .introw-lbl{font-size:11px;text-transform:uppercase;letter-spacing:.1em;font-weight:700;color:var(--iq-pink)}
-      .im{display:inline-flex;align-items:center;gap:6px;font-size:13.5px;color:rgba(255,255,255,.82);
-        font-variant-numeric:tabular-nums}
-      .im b{color:#fff;font-weight:700}
-      .imi{width:15px;height:15px;color:rgba(255,255,255,.6);display:inline-flex}.imi svg{width:15px;height:15px}
+      /* interaktioner (i hero) – egna rutor, lyft fram */
+      .introw-lbl{font-size:11px;text-transform:uppercase;letter-spacing:.11em;font-weight:700;
+        color:var(--iq-pink);margin:16px 0 8px}
+      .introw{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px}
+      .imc{background:rgba(255,255,255,.10);border:1px solid rgba(255,255,255,.18);
+        border-radius:14px;padding:11px 14px;min-width:0;overflow:hidden}
+      .imc .imi{width:15px;height:15px;color:rgba(255,255,255,.58);display:inline-flex}.imc .imi svg{width:15px;height:15px}
+      .imc .imv{font-family:var(--disp);font-size:19px;font-weight:800;color:#fff;line-height:1.12;
+        margin-top:5px;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+      .imc .imt{font-size:11.5px;color:rgba(255,255,255,.72);margin-top:1px}
       /* periodrad */
       .period{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:2px 0 10px}
       .period .lbl{font-size:11px;text-transform:uppercase;letter-spacing:.09em;color:var(--muted);font-weight:700;margin-right:2px}
@@ -1221,6 +1225,7 @@ def main():
               f'visad som median per grupp. Översikten och allt nedanför följer '
               f'segment- och periodvalet.</p>'
               f'<div class="stat" id="statrow"></div>'
+              f'<p class="introw-lbl">Interaktioner</p>'
               f'<div class="introw" id="introw"></div>'
               f'</header>')
 
