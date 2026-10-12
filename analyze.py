@@ -924,7 +924,19 @@ def main():
       *{box-sizing:border-box}
       body{font:15px/1.55 "Helvetica Neue",Helvetica,Arial,-apple-system,system-ui,sans-serif;
         margin:0;background:var(--bg);color:var(--ink);-webkit-font-smoothing:antialiased}
-      .wrap{max-width:1180px;margin:0 auto;padding:28px 20px 100px}
+      .wrap{max-width:1340px;margin:0 auto;padding:28px 20px 100px}
+      .layout{display:grid;grid-template-columns:1fr;gap:0}
+      @media(min-width:1080px){
+        .layout{grid-template-columns:330px minmax(0,1fr);gap:26px;align-items:start}
+        .sidebar{position:sticky;top:20px}
+        .sidebar .hero{margin-bottom:0}
+        .sidebar .hero h1{font-size:26px;margin-bottom:8px}
+        .sidebar .hero .lead{font-size:12.5px;margin-bottom:16px}
+        .sidebar .stat{flex-direction:column}
+        .sidebar .stat .c{flex:0 0 auto;min-width:0}
+        .sidebar .introw{flex-direction:column;align-items:flex-start;gap:9px;margin-top:16px;
+          border-top:1px solid rgba(255,255,255,.16);padding-top:14px}
+      }
       /* hero / header-band i IQ-marinblått */
       .hero{position:relative;overflow:hidden;background:var(--iq-navy);color:#fff;
         border-radius:24px;padding:26px 30px 22px;margin-bottom:26px}
@@ -998,14 +1010,14 @@ def main():
       /* tabeller */
       section{overflow-x:auto}
       /* tidsgraf */
-      #chart{position:relative;background:var(--panel);border:1px solid var(--line);border-radius:18px;
+      #chart{position:relative;background:var(--card);border:1px solid var(--line);border-radius:18px;
         padding:14px 14px 6px;margin-top:2px}
       #chart svg{display:block;overflow:visible}
-      #chart-note{margin-top:14px;background:var(--panel);border:1px solid var(--line);
+      #chart-note{margin-top:14px;background:var(--card);border:1px solid var(--line);
         border-left:3px solid var(--iq-blue);border-radius:12px;padding:11px 15px;
         font-size:13.5px;line-height:1.5}
       #chart-note strong{color:var(--iq-navy)}
-      table.bt{border-collapse:collapse;width:100%;font-size:14px;background:var(--panel);
+      table.bt{border-collapse:collapse;width:100%;font-size:14px;background:var(--card);
         border:1px solid var(--line);border-radius:16px;overflow:hidden;table-layout:fixed}
       table.bt th,table.bt td{padding:11px 12px;text-align:left;
         border-bottom:1px solid var(--line)}
@@ -1015,7 +1027,7 @@ def main():
       table.bt tr.grow td:first-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
       table.bt tbody tr:last-child td{border-bottom:none}
       table.bt th{font-size:11px;text-transform:uppercase;letter-spacing:.07em;
-        color:var(--muted);font-weight:700;background:var(--card)}
+        color:var(--muted);font-weight:700;background:var(--panel)}
       th.v,td.v{text-align:right;white-space:nowrap}
       th.sortable{cursor:pointer;user-select:none} th.sortable:hover{color:var(--iq-navy)}
       tr.grow{cursor:pointer;transition:background .12s} tr.grow:hover{background:#0000000a}
@@ -1105,13 +1117,19 @@ def main():
       .ranksec{margin-bottom:10px}
       .rankhead{font-family:var(--disp);font-size:19px;font-weight:800;letter-spacing:-.01em;
         color:var(--iq-navy);margin:20px 0 4px}
-      /* flikar */
-      .tabs{display:flex;gap:4px;margin:6px 0 22px;border-bottom:1px solid var(--line)}
-      .tab{border:none;background:none;font-family:var(--disp);font-size:15.5px;font-weight:700;
-        color:var(--muted);padding:11px 18px;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-1px}
+      /* flikar + panel som tydligt hänger ihop */
+      .tabs{display:flex;gap:5px;margin:4px 0 0;padding:0 4px}
+      .tab{border:1px solid transparent;border-bottom:none;background:none;font-family:var(--disp);
+        font-size:16px;font-weight:700;color:var(--muted);padding:12px 20px 13px;cursor:pointer;
+        border-radius:13px 13px 0 0}
       .tab:hover{color:var(--ink)}
-      .tab.active{color:var(--iq-navy);border-bottom-color:var(--iq-blue)}
+      .tab.active{color:var(--iq-navy);background:var(--panel);border-color:var(--line)}
+      .tabpanel{background:var(--panel);border:1px solid var(--line);border-radius:16px;
+        padding:22px 24px;margin-bottom:24px}
       .tabpanel[hidden]{display:none}
+      .tabpanel>section:first-child>h2:first-child,.tabpanel>h2:first-child,
+      .tabpanel>:first-child{margin-top:0}
+      .tabpanel>:last-child{margin-bottom:0}
       /* justeringsflöde */
       .flowbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:0 0 12px}
       .flowbar .lbl{font-size:11px;text-transform:uppercase;letter-spacing:.09em;color:var(--muted);font-weight:700}
@@ -1283,9 +1301,10 @@ def main():
            f'<link rel="stylesheet" href="https://fonts.googleapis.com/css2?'
            f'family=Onest:wght@400;500;600;700;800&display=swap">'
            f'<style>{css}</style>'
-           f'</head><body><div class="wrap">{header}{seg}{tabs}'
-           f'{insikter_panel}{topp_panel}{justering_panel}'
-           f'</div>{editor}{ovbar}'
+           f'</head><body><div class="wrap"><div class="layout">'
+           f'<aside class="sidebar">{header}</aside>'
+           f'<main class="main">{seg}{tabs}{insikter_panel}{topp_panel}{justering_panel}</main>'
+           f'</div></div>{editor}{ovbar}'
            f'<script>window.POSTS={data_js};window.HAS_TONE={str(has_tone).lower()};'
            f'window.HAS_OCCASION={str(has_occasion).lower()};'
            f'window.OVERRIDES={ov_js};window.EDITABLE={edit_js};</script>'
