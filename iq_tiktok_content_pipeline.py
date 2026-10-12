@@ -136,7 +136,14 @@ VISION_SCHEMA = {
         "hook_typ": {
             "type": "string",
             "enum": ["fraga", "pastaende", "chock", "humor", "statistik", "ovrigt"],
-            "description": "Typ av hook i de första sekunderna (utifrån tal + första bilden).",
+            "description": "Typ av hook i de första sekunderna. En hook enligt IQ:s "
+                           "definition är ANTINGEN (a) en direkt ställd fråga i början "
+                           "('Har du testat att…?') → 'fraga', ELLER (b) något som "
+                           "direkt sticker ut och får tittaren att reagera/vilja se mer "
+                           "– ibland ett kort klipp från längre fram i videon som lyfts "
+                           "först (en scen som egentligen kommer senare). Välj då den typ "
+                           "som bäst beskriver greppet (pastaende/chock/humor/statistik). "
+                           "Finns inget tydligt hook-grepp i början → 'ovrigt'.",
         },
         "text_i_bild": {
             "type": "array",
@@ -204,7 +211,10 @@ VISION_BODY = (
     "- Läs av (OCR) all text och grafik som syns i bild – återge svensk text "
     "ordagrant.\n"
     "- Bedöm format och innehållskategori. Klassa hook_typ utifrån början "
-    "(tal + första bilden, eller enbart första bilden för bildinlägg).\n"
+    "(tal + första bilden, eller enbart första bilden för bildinlägg). En hook "
+    "är en direkt fråga i början ELLER något som direkt sticker ut och får en "
+    "att vilja se mer – ibland ett kort klipp från längre fram i videon som "
+    "lyfts först. Saknas ett sådant grepp i början: hook_typ='ovrigt'.\n"
     "- medverkande: ingen / en_person / flera_personer.\n"
     "- CTA (lista): fånga varje uppmaning oavsett om den är talad, syns i bild "
     "eller är en länk i captionen (t.ex. en webbadress). Tom lista om ingen finns.\n"

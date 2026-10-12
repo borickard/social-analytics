@@ -7,8 +7,10 @@ Lägger till tre kolumner i iq_tiktok_enriched.csv:
                  "lattsamt" (meme/relaterbart/underhållande utan tungt budskap)
                  eller "blandat".
   budskap_teman – JSON-lista med vilka alkohol-budskap som förekommer.
-  har_hook     – "ja"/"nej": finns en tydlig hook i början (ren binär flagga,
-                 komplement till hook_typ som saknar ett "ingen"-värde).
+  har_hook     – "ja"/"nej": tydlig hook enligt IQ:s definition – en direkt
+                 fråga i början ("Har du testat att…?") eller något som sticker
+                 ut och får en att vilja se mer (ibland ett klipp från längre
+                 fram som lyfts först). Annars "nej". Komplement till hook_typ.
 
 Använder BARA text (caption + transkript + text i bild + tema/kategori) – inga
 bilder – så det är snabbt och billigt. Återupptagbart: rader som redan har
@@ -69,8 +71,14 @@ SCHEMA = {
         "har_hook": {
             "type": "string",
             "enum": ["ja", "nej"],
-            "description": "Finns en tydlig hook i de första sekunderna (fråga, "
-                           "påstående, chock, statistik e.d.) som fångar tittaren?",
+            "description": "'ja' BARA om inlägget har en tydlig hook enligt IQ:s "
+                           "definition: ANTINGEN (a) en direkt ställd fråga i början "
+                           "(\"Har du testat att…?\", \"Känner du igen dig?\"), ELLER "
+                           "(b) något som direkt sticker ut och får tittaren att "
+                           "reagera/vilja se mer – ibland ett kort oväntat klipp eller "
+                           "påstående som lyfts först (en del av videon som egentligen "
+                           "kommer senare). Ett lugnt, beskrivande intro utan ett sådant "
+                           "grepp = 'nej'. Var restriktiv: tveka → 'nej'.",
         },
     },
     "required": ["budskapston", "budskap_teman", "har_hook"],
@@ -86,7 +94,11 @@ PROMPT = (
     "meme/relaterbart/underhållande utan tungt budskap. 'blandat' om båda "
     "tydligt finns.\n"
     "2) budskap_teman: vilka alkohol-budskap som förekommer (tom lista om inga).\n"
-    "3) har_hook: om det finns en tydlig hook i början.\n"
+    "3) har_hook: 'ja' BARA vid en tydlig hook enligt vår definition – ANTINGEN "
+    "en direkt ställd fråga i början (\"Har du testat att…?\"), ELLER något som "
+    "direkt sticker ut och får en att vilja se mer (t.ex. ett oväntat påstående "
+    "eller ett kort klipp som egentligen kommer senare men lyfts först). Ett "
+    "lugnt/beskrivande intro utan sådant grepp = 'nej'. Var restriktiv.\n"
     "Svara endast enligt strukturen."
 )
 

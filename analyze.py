@@ -409,7 +409,7 @@ function renderRank(){
     `<button class="pill mini${rankDir==='top'?' active':''}" data-rankdir="top">Högst engagemang</button>`+
     `<button class="pill mini${rankDir==='bottom'?' active':''}" data-rankdir="bottom">Lägst engagemang</button>`):'';
   const h=`<div class="metricbar"><span class="lbl">Sortera efter</span>${pills}${dirToggle}</div>`+
-    cols.map(c=>`<div class="ranksec"><h3>${dirLbl} – ${c[0]}</h3>${mk(c[1])}</div>`).join('');
+    cols.map(c=>`<div class="ranksec"><div class="rankhead">${dirLbl} – ${c[0]}</div>${mk(c[1])}</div>`).join('');
   document.getElementById('rank').innerHTML=h;
 }
 
@@ -658,6 +658,84 @@ function saveEditor(){const p=POSTS.find(x=>x.id===editId);if(!p){closeEditor();
   document.querySelectorAll('#edFields select').forEach(sel=>{const f=sel.dataset.f,v=sel.value;
     if(v!==(p[f]||'')){OV[editId]=OV[editId]||{};OV[editId][f]=v;}});
   saveLS();applyOv();if(AUTOSAVE)postOverrides();updateOvBar();closeEditor();renderAll();}
+
+/* ---- Justeringsflöde: gå igenom inläggen ett i taget och rätta taggar ---- */
+const REV_KEY='iq_reviewed_'+POSTS.length;
+function loadRev(){try{return new Set(JSON.parse(localStorage.getItem(REV_KEY)||'[]'));}catch(e){return new Set();}}
+let reviewed=loadRev();
+function saveRev(){try{localStorage.setItem(REV_KEY,JSON.stringify([...reviewed]));}catch(e){}}
+let flowStatus='all', flowField='', flowVal='', flowQuery='', flowHide=false, flowList=[], flowIdx=0;
+const HOOK_HINT='Hook (vår definition): en direkt fråga i början ("Har du testat att…?"), eller något som sticker ut och får en att reagera – ibland ett kort klipp från längre fram i videon som lyfts först för att man ska vilja se mer.';
+function buildFlowList(){
+  let ps=POSTS.slice();
+  if(flowStatus==='adj')ps=ps.filter(p=>OV[p.id]);
+  else if(flowStatus==='unadj')ps=ps.filter(p=>!OV[p.id]);
+  if(flowField&&flowVal!=='')ps=ps.filter(p=>(p[flowField]||'')===flowVal);
+  const q=flowQuery.trim().toLowerCase();
+  if(q)ps=ps.filter(p=>(p.sok||'').includes(q));
+  if(flowHide)ps=ps.filter(p=>!reviewed.has(p.id));
+  ps.sort((a,b)=>(b.date||'').localeCompare(a.date||''));
+  flowList=ps.map(p=>p.id);
+  if(flowIdx>=flowList.length)flowIdx=Math.max(0,flowList.length-1);
+}
+function flowFieldsHTML(p){
+  return Object.keys(window.EDITABLE).map(f=>{const cur=p[f]||'';
+    const opts=window.EDITABLE[f].map(v=>`<option value="${esc(v)}"${v===cur?' selected':''}>${esc(v||'(tom)')}</option>`).join('');
+    const hint=f==='har_hook'?` <span class="fhint" title="${esc(HOOK_HINT)}">?</span>`:'';
+    return `<div class="ffield"><label>${f}${hint}</label><select class="flowsel" data-f="${f}" data-id="${esc(p.id)}">${opts}</select></div>`;
+  }).join('');
+}
+function renderFlow(){
+  const host=document.getElementById('flow');if(!host)return;
+  buildFlowList();const total=flowList.length;
+  if(!total){host.innerHTML='<p class="muted" style="padding:16px 0">Inga inlägg matchar filtret. 🎉</p>';return;}
+  const p=POSTS.find(x=>x.id===flowList[flowIdx]);if(!p){host.innerHTML='';return;}
+  const adj=OV[p.id],rev=reviewed.has(p.id),seg=p.organic?'organiskt':'boostat',bench=benchText(p);
+  host.innerHTML=
+    `<div class="flowhead"><span>Inlägg <b>${flowIdx+1}</b> av <b>${total}</b></span>`+
+    `<span class="dot">·</span><span><b>${reviewed.size}</b> granskade totalt</span>`+
+    (adj?'<span class="flowbadge adj">justerad</span>':'')+
+    (rev?'<span class="flowbadge rev">granskad ✓</span>':'')+'</div>'+
+    `<div class="flowcard">`+
+      `<a class="flowimg" href="${esc(p.url)}" target="_blank" rel="noopener"><img loading="lazy" src="${esc(p.thumb)}" alt="">`+
+        `<span class="er"><b>${fmtPct(p.er)}</b></span>`+(bench?`<span class="bench ${bench.c}">${bench.t}</span>`:'')+`</a>`+
+      `<div class="flowbody">`+
+        `<div class="flowmeta">${esc(p.typ)} · ${esc(p.kategori)} · ${esc(p.date)} · ${seg} · `+
+          `<a href="${esc(p.url)}" target="_blank" rel="noopener">öppna på TikTok ↗</a></div>`+
+        `<div class="flowmetrics metrics">${metricsHTML(p)}</div>`+
+        `<div class="flowcap">${esc(p.caption)||'<span class="muted">(ingen beskrivning)</span>'}</div>`+
+        `<div class="flowfields">${flowFieldsHTML(p)}</div>`+
+        `<p class="flowhook">${esc(HOOK_HINT)}</p>`+
+      `</div></div>`+
+    `<div class="flowactions">`+
+      `<button class="pill" data-flow="prev"${flowIdx<=0?' disabled':''}>← Föregående</button>`+
+      `<button class="pill" data-flow="skip">Hoppa över →</button>`+
+      `<button class="pill dark" data-flow="done">Granskad ✓ → nästa</button></div>`;
+}
+function flowSet(id,field,value){const p=POSTS.find(x=>x.id===id);if(!p||value===(p[field]||''))return;
+  OV[id]=OV[id]||{};OV[id][field]=value;saveLS();applyOv();if(AUTOSAVE)postOverrides();
+  updateOvBar();renderAll();renderFlow();}
+function flowAct(act){
+  if(!flowList.length)return;const id=flowList[flowIdx];
+  if(act==='prev'){if(flowIdx>0)flowIdx--;renderFlow();return;}
+  if(act==='done'&&id){reviewed.add(id);saveRev();
+    if(flowHide){renderFlow();return;}}            // rebuild drops den → nästa glider in
+  if(flowIdx<flowList.length-1)flowIdx++;
+  renderFlow();}
+function populateFlowFilters(){
+  const fs=document.getElementById('ffield');if(fs)fs.innerHTML='<option value="">(alla fält)</option>'+
+    Object.keys(window.EDITABLE).map(f=>`<option value="${f}">${f}</option>`).join('');
+  updateFlowValFilter();}
+function updateFlowValFilter(){const vs=document.getElementById('fval');if(!vs)return;
+  if(!flowField){vs.innerHTML='<option value="">–</option>';vs.disabled=true;return;}
+  vs.disabled=false;vs.innerHTML='<option value="">(alla värden)</option>'+
+    (window.EDITABLE[flowField]||[]).map(v=>`<option value="${esc(v)}">${esc(v||'(tom)')}</option>`).join('');}
+function showTab(name){
+  document.querySelectorAll('.tabpanel').forEach(p=>{p.hidden=(p.dataset.tab!==name);});
+  document.querySelectorAll('.tab').forEach(b=>b.classList.toggle('active',b.dataset.tab===name));
+  try{localStorage.setItem('iq_tab',name);}catch(e){}
+  if(name==='justering')renderFlow();
+  requestAnimationFrame(refreshMore);}
 const OV_ENDPOINT='/api/overrides';
 function postOverrides(){
   fetch(OV_ENDPOINT,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(OV)})
@@ -694,6 +772,13 @@ document.addEventListener('click',e=>{
   if(rd){rankDir=rd.dataset.rankdir;renderRank();return;}
   const cp=e.target.closest('.pill[data-cols]');
   if(cp){setCols(+cp.dataset.cols);return;}
+  const tb=e.target.closest('.tab');
+  if(tb){showTab(tb.dataset.tab);return;}
+  const fst=e.target.closest('.pill[data-fstatus]');
+  if(fst){flowStatus=fst.dataset.fstatus;flowIdx=0;
+    document.querySelectorAll('.pill[data-fstatus]').forEach(x=>x.classList.toggle('active',x===fst));renderFlow();return;}
+  const fa=e.target.closest('.pill[data-flow]');
+  if(fa){flowAct(fa.dataset.flow);return;}
   const act=e.target.closest('[data-act]');
   if(act){const a=act.dataset.act;
     if(a==='dl')exportCsv();else if(a==='clr')clearLocal();
@@ -715,6 +800,11 @@ document.addEventListener('change',e=>{
   if(e.target.id==='bulkField'){bulkField=e.target.value;bulkVal=null;bulkManual=true;
     const vs=document.getElementById('bulkValue');if(vs)vs.innerHTML=bulkValueOptions();return;}
   if(e.target.id==='bulkValue'){bulkVal=e.target.value;bulkManual=true;return;}
+  const fsel=e.target.closest('.flowsel');
+  if(fsel){flowSet(fsel.dataset.id,fsel.dataset.f,fsel.value);return;}
+  if(e.target.id==='ffield'){flowField=e.target.value;flowVal='';updateFlowValFilter();flowIdx=0;renderFlow();return;}
+  if(e.target.id==='fval'){flowVal=e.target.value;flowIdx=0;renderFlow();return;}
+  if(e.target.id==='fhide'){flowHide=e.target.checked;flowIdx=0;renderFlow();return;}
 });
 document.querySelectorAll('.pill[data-seg]').forEach(b=>b.addEventListener('click',e=>{
   segment=e.currentTarget.dataset.seg;
@@ -768,6 +858,12 @@ DIMS.forEach(d=>{host.insertAdjacentHTML('beforeend',
   `<section><h2>${d.label}</h2><div id="dim-${d.id}"></div></section>`);});
 updateOvBar();
 renderAll();
+// Flikar + justeringsflöde.
+populateFlowFilters();
+const _fsearch=document.getElementById('fsearch');
+if(_fsearch)_fsearch.addEventListener('input',()=>{flowQuery=_fsearch.value;flowIdx=0;renderFlow();});
+let _initTab='insikter';try{_initTab=localStorage.getItem('iq_tab')||'insikter';}catch(e){}
+showTab(_initTab);
 // När sajten serveras (serve.py lokalt eller Vercel): hämta molnets overrides
 // och lägg överst, så alla ser samma rättelser.
 if(AUTOSAVE){fetch(OV_ENDPOINT).then(r=>r.ok?r.json():{}).then(c=>{
@@ -1006,6 +1102,54 @@ def main():
       @media(max-width:360px){.ranklist{grid-template-columns:1fr}}
       .rankitem{display:flex;flex-direction:column;height:100%}
       .rankitem>.pc{flex:1}
+      .ranksec{margin-bottom:10px}
+      .rankhead{font-family:var(--disp);font-size:19px;font-weight:800;letter-spacing:-.01em;
+        color:var(--iq-navy);margin:20px 0 4px}
+      /* flikar */
+      .tabs{display:flex;gap:4px;margin:6px 0 22px;border-bottom:1px solid var(--line)}
+      .tab{border:none;background:none;font-family:var(--disp);font-size:15.5px;font-weight:700;
+        color:var(--muted);padding:11px 18px;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-1px}
+      .tab:hover{color:var(--ink)}
+      .tab.active{color:var(--iq-navy);border-bottom-color:var(--iq-blue)}
+      .tabpanel[hidden]{display:none}
+      /* justeringsflöde */
+      .flowbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:0 0 12px}
+      .flowbar .lbl{font-size:11px;text-transform:uppercase;letter-spacing:.09em;color:var(--muted);font-weight:700}
+      .flowbar select,.flowbar input[type=search]{border:1px solid var(--line);border-radius:10px;
+        padding:7px 10px;font:inherit;font-size:13px;background:var(--panel);color:var(--ink)}
+      .flowbar input[type=search]{min-width:200px}
+      .flowbar select:focus,.flowbar input:focus{outline:none;border-color:var(--iq-blue)}
+      .fhide{display:inline-flex;align-items:center;gap:6px;font-size:13px;color:var(--muted);cursor:pointer;margin-left:8px}
+      .fhide input{width:16px;height:16px;accent-color:var(--iq-blue);cursor:pointer}
+      .flowhead{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:14px;color:var(--muted);margin:4px 0 12px}
+      .flowhead b{color:var(--ink)} .flowhead .dot{color:var(--line)}
+      .flowbadge{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.04em;padding:3px 9px;border-radius:999px}
+      .flowbadge.adj{background:var(--iq-pink);color:var(--iq-navy)}
+      .flowbadge.rev{background:#5f7d5c22;color:#4a6647}
+      .flowcard{display:flex;gap:18px;align-items:flex-start;background:var(--card);
+        border:1px solid var(--line);border-radius:18px;padding:16px}
+      .flowimg{position:relative;flex:0 0 auto;line-height:0;display:block}
+      .flowimg img{width:190px;aspect-ratio:3/4;object-fit:cover;border-radius:14px;background:var(--line)}
+      .flowimg .er{position:absolute;bottom:8px;left:8px;background:var(--iq-blue);color:#fff;
+        border-radius:11px;padding:6px 10px;line-height:1}
+      .flowimg .er b{font-family:var(--disp);font-size:18px;font-weight:800;font-variant-numeric:tabular-nums}
+      .flowimg .bench{position:absolute;bottom:8px;right:8px}
+      .flowbody{flex:1;min-width:0;display:flex;flex-direction:column;gap:10px}
+      .flowmeta{font-size:12.5px;color:var(--muted)} .flowmeta a{color:var(--iq-blue);font-weight:700}
+      .flowcap{font-size:14px;color:var(--ink);line-height:1.5}
+      .flowfields{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px 16px;margin-top:2px}
+      .ffield label{display:block;font-size:11px;text-transform:uppercase;letter-spacing:.07em;
+        color:var(--muted);font-weight:700;margin-bottom:5px}
+      .ffield select{width:100%;padding:9px 10px;border:1px solid var(--line);border-radius:10px;
+        background:var(--panel);font:inherit;font-size:14px;color:var(--ink)}
+      .ffield select:focus{outline:none;border-color:var(--iq-blue)}
+      .fhint{display:inline-flex;align-items:center;justify-content:center;width:15px;height:15px;
+        border-radius:50%;background:var(--line);color:var(--muted);font-size:10px;font-weight:800;cursor:help}
+      .flowhook{font-size:12px;color:var(--muted);background:var(--panel);border-left:3px solid var(--iq-pink);
+        border-radius:8px;padding:9px 12px;margin:4px 0 0;line-height:1.5}
+      .flowactions{display:flex;gap:10px;margin-top:16px;flex-wrap:wrap}
+      .flowactions .pill[disabled]{opacity:.4;cursor:default}
+      @media(max-width:560px){.flowcard{flex-direction:column}.flowimg img{width:150px}}
       .ovitem{margin-bottom:10px}
       .ovchg{font-size:12px;color:var(--iq-blue);margin:4px 0 0 114px;font-weight:600}
       .ovdetails{margin-top:34px;border-top:1px solid var(--line);padding-top:14px}
@@ -1075,18 +1219,48 @@ def main():
            '<button class="pill mini" data-period="90">Senaste 90 dagar</button>'
            '<button class="pill mini" data-period="365">Senaste 12 mån</button>'
            '<span class="dates">Från <input type="date" id="pfrom"> till '
-           '<input type="date" id="pto"></span></div>'
-           '<p id="levels" class="muted"></p>')
+           '<input type="date" id="pto"></span></div>')
 
-    # Tidsgrafen ritas av JS-appen (uppdateras med segment-väljaren).
-    charts = ('<section><h2 id="chart-title">Engagemang över tid</h2>'
+    tabs = ('<div class="tabs" role="tablist">'
+            '<button class="tab active" data-tab="insikter">Insikter</button>'
+            '<button class="tab" data-tab="topp">Topplistor</button>'
+            '<button class="tab" data-tab="justering">Justering</button></div>')
+
+    # Tidsgrafen ritas av JS-appen (uppdateras med segment-/periodvalet).
+    charts = ('<p id="levels" class="muted"></p>'
+              '<section><h2 id="chart-title">Engagemang över tid</h2>'
               '<div id="chart"></div><p id="chart-note" class="muted"></p></section>')
+
+    insikter_panel = f'<div class="tabpanel" data-tab="insikter">{charts}<div id="dims"></div></div>'
+
+    topp_panel = (f'<div class="tabpanel" data-tab="topp" hidden>'
+                  f'<section><h2>Topplistor</h2>'
+                  f'<p class="muted">Välj vad som ska rangordnas. För viktad ER kan du växla '
+                  f'mellan <b>Högst</b> och <b>Lägst engagemang</b> (filtrerat till ≥ {3000} visningar för '
+                  f'stabilare siffror); för delningar, kommentarer m.m. visas flest. '
+                  f'Klicka för att öppna på TikTok.</p><div id="rank"></div></section></div>')
 
     search = ('<section><h2>Sök i beskrivningar</h2>'
               '<input id="searchbox" type="search" autocomplete="off" '
               'placeholder="Skriv ett ord – visar alla inlägg vars beskrivning innehåller det">'
               '<div id="searchinfo" class="muted"></div>'
               '<div id="searchres"></div></section>')
+
+    justering = ('<section><h2>Justering</h2>'
+                 '<p class="muted">Gå igenom inläggen ett i taget och rätta taggar som blivit fel. '
+                 'Ändringar sparas automatiskt. Filtrera på om de justerats manuellt eller inte, '
+                 'bocka av dem du gått igenom, och hoppa vidare till nästa.</p>'
+                 '<div class="flowbar"><span class="lbl">Visa</span>'
+                 '<button class="pill mini active" data-fstatus="all">Alla</button>'
+                 '<button class="pill mini" data-fstatus="unadj">Ej justerade</button>'
+                 '<button class="pill mini" data-fstatus="adj">Justerade</button>'
+                 '<label class="fhide"><input type="checkbox" id="fhide"> Dölj granskade</label></div>'
+                 '<div class="flowbar"><span class="lbl">Fält</span>'
+                 '<select id="ffield"></select><select id="fval" disabled></select>'
+                 '<input id="fsearch" type="search" autocomplete="off" placeholder="Sök i beskrivning"></div>'
+                 '<div id="flow"></div></section>')
+
+    justering_panel = f'<div class="tabpanel" data-tab="justering" hidden>{justering}{search}</div>'
 
     editor = ('<div id="editor" class="modal" hidden><div class="sheet">'
               '<div class="mh"><b>Ändra taggar</b>'
@@ -1109,13 +1283,8 @@ def main():
            f'<link rel="stylesheet" href="https://fonts.googleapis.com/css2?'
            f'family=Onest:wght@400;500;600;700;800&display=swap">'
            f'<style>{css}</style>'
-           f'</head><body><div class="wrap">{header}{seg}{charts}{search}'
-           f'<div id="dims"></div>'
-           f'<section><h2>Topplistor</h2>'
-           f'<p class="muted">Välj vad som ska rangordnas. För viktad ER kan du växla '
-           f'mellan <b>Högst</b> och <b>Lägst engagemang</b> (filtrerat till ≥ {3000} visningar för '
-           f'stabilare siffror); för delningar, kommentarer m.m. visas flest. '
-           f'Klicka för att öppna på TikTok.</p><div id="rank"></div></section>'
+           f'</head><body><div class="wrap">{header}{seg}{tabs}'
+           f'{insikter_panel}{topp_panel}{justering_panel}'
            f'</div>{editor}{ovbar}'
            f'<script>window.POSTS={data_js};window.HAS_TONE={str(has_tone).lower()};'
            f'window.HAS_OCCASION={str(has_occasion).lower()};'
