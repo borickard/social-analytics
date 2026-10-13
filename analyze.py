@@ -481,11 +481,43 @@ function renderOverview(){
   if(sr)sr.innerHTML=tile(bigv(n),'inlägg')+tile(bigv(sumV),'visningar')+
     tile(n?fmtPct(erMed):'–','eng.rate median','ac-pink')+
     tile(n?fmtPct(erSnitt):'–','eng.rate snitt','ac-blue')+
-    tile(tr.verdict,'trend','wide');
+    `<div class="c wide trendcard"><div class="trendhead"><span class="big">${tr.verdict}</span>`+
+      `<span class="muted">eng.rate-trend över tid</span></div><div class="trendmini" id="trendmini"></div></div>`;
   const ir=document.getElementById('introw');
   if(ir)ir.innerHTML=
     [['like',sumL,'likes'],['comment',sumK,'kommentarer'],['share',sumD,'delningar'],['save',sumS,'sparade']]
      .map(([k,v,t])=>`<div class="imc"><span class="imi">${ICON[k]}</span><div class="imv" title="${fmtNum(v)} exakt">${compactNum(v)}</div><div class="imt">${t}</div></div>`).join('');
+  renderMiniChart();
+}
+// Förenklad trendgraf i dashboarden: samma typ av area-/linjegraf som den stora,
+// men avskalad (inga axlar/etiketter), plus en rät trendlinje (linjär regression)
+// som visar riktningen över tid. Följer segment- och periodvalet.
+function renderMiniChart(){
+  const host=document.getElementById('trendmini');if(!host)return;
+  const series=timeAgg(segPosts(),chartGran());
+  if(series.length<2){host.innerHTML='<div class="trendempty">för få datapunkter</div>';return;}
+  const W=320,H=72,pad=5;
+  const ys=series.map(s=>s[1]*100),ymax=Math.max(...ys)*1.18||1;
+  const n=series.length;
+  const X=i=>pad+i*(W-2*pad)/(n-1), Y=v=>H-pad-(Math.max(0,Math.min(ymax,v))/ymax)*(H-2*pad);
+  const P=series.map((s,i)=>[X(i),Y(ys[i])]);
+  const base=H-pad;
+  const line=P.map(p=>p[0].toFixed(1)+','+p[1].toFixed(1)).join(' ');
+  const area='M '+P[0][0].toFixed(1)+' '+base.toFixed(1)+' '+
+    P.map(p=>'L '+p[0].toFixed(1)+' '+p[1].toFixed(1)).join(' ')+
+    ' L '+P[n-1][0].toFixed(1)+' '+base.toFixed(1)+' Z';
+  // Linjär regression → rät trendlinje från första till sista punkten.
+  const mx=(n-1)/2, my=ys.reduce((a,b)=>a+b,0)/n;
+  let nu=0,de=0;for(let i=0;i<n;i++){nu+=(i-mx)*(ys[i]-my);de+=(i-mx)**2;}
+  const sl=de?nu/de:0, a0=my-sl*mx;
+  const trend=X(0).toFixed(1)+','+Y(a0).toFixed(1)+' '+X(n-1).toFixed(1)+','+Y(a0+sl*(n-1)).toFixed(1);
+  host.innerHTML='<svg viewBox="0 0 '+W+' '+H+'" width="100%" height="100%" preserveAspectRatio="none" style="display:block">'
+    +'<defs><linearGradient id="miniarea" x1="0" y1="0" x2="0" y2="1">'
+    +'<stop offset="0" stop-color="#fff" stop-opacity=".18"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient></defs>'
+    +'<path d="'+area+'" fill="url(#miniarea)"/>'
+    +'<polyline points="'+line+'" fill="none" stroke="rgba(255,255,255,.55)" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"/>'
+    +'<polyline points="'+trend+'" fill="none" stroke="#ffaac7" stroke-width="2.4" stroke-linecap="round"/>'
+    +'</svg>';
 }
 function renderChart(){
   const gran=chartGran(),series=timeAgg(segPosts(),gran);
@@ -987,10 +1019,9 @@ def main():
       .eyebrow{font-size:12px;font-weight:700;letter-spacing:.15em;text-transform:uppercase;
         color:var(--iq-pink);margin:0 0 8px}
       .hero h1{color:#fff;margin:0 0 18px}
-      .logout{position:absolute;top:22px;right:24px;z-index:2;font-size:12px;font-weight:700;
-        color:#fff;text-decoration:none;border:1px solid rgba(255,255,255,.32);
-        border-radius:999px;padding:6px 13px;background:rgba(255,255,255,.12)}
-      .logout:hover{background:rgba(255,255,255,.22);border-color:rgba(255,255,255,.55)}
+      /* logga ut: diskret länk i sidfoten – ingen behöver den normalt */
+      .logout{color:inherit;text-decoration:none;opacity:.8}
+      .logout:hover{text-decoration:underline;opacity:1}
       h1{font-family:var(--disp);font-size:40px;line-height:1.02;letter-spacing:-.025em;font-weight:800;margin:0 0 8px}
       @media(max-width:560px){h1{font-size:30px}}
       h2{font-family:var(--disp);font-size:22px;letter-spacing:-.015em;font-weight:800;color:var(--iq-navy);margin:32px 0 12px}
@@ -1006,6 +1037,13 @@ def main():
       .stat .big{font-family:var(--disp);font-size:24px;font-weight:800;letter-spacing:-.02em;
         margin-bottom:2px;color:#fff;line-height:1.1;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
       .stat .muted{font-size:12.5px;color:rgba(255,255,255,.7)}
+      /* förenklad trendgraf i dashboarden */
+      .trendcard .trendhead{display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin-bottom:8px}
+      .trendcard .trendhead .big{font-size:18px;margin:0}
+      .trendcard .trendhead .muted{font-size:11px;text-transform:uppercase;letter-spacing:.06em}
+      .trendmini{height:64px}
+      .trendmini svg{height:64px}
+      .trendempty{font-size:11.5px;color:rgba(255,255,255,.5);padding:20px 0;text-align:center}
       /* interaktioner (i hero) – egna rutor, lyft fram */
       .introw-lbl{font-size:11px;text-transform:uppercase;letter-spacing:.11em;font-weight:700;
         color:var(--iq-pink);margin:16px 0 8px}
@@ -1293,14 +1331,14 @@ def main():
         return f'<div class="{cls}"><div class="big">{v}</div><div class="muted">{l}</div></div>'
 
     header = (f'<header class="hero">'
-              f'<a href="/logout" id="logoutlink" class="logout" hidden>Logga ut</a>'
               f'<p class="eyebrow">Innehåll × engagemang</p>'
               f'<h1>IQ × TikTok Dashboard</h1>'
               f'<div class="stat" id="statrow"></div>'
               f'<p class="introw-lbl">Interaktioner</p>'
               f'<div class="introw" id="introw"></div>'
               f'<p class="hero-foot">{len(ana)} analyserade inlägg · '
-              f'översikten och allt nedanför följer segment- och periodvalet</p>'
+              f'översikten och allt nedanför följer segment- och periodvalet'
+              f'<a href="/logout" id="logoutlink" class="logout" hidden> · logga ut</a></p>'
               f'</header>')
 
     seg = ('<div class="seg"><span class="lbl">Segment</span>'
