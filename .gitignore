@@ -10,6 +10,7 @@ env/
 # dashboarden i molnet (annars måste analyze.py köras lokalt).
 iq_tiktok_data/*
 !iq_tiktok_data/iq_tiktok_enriched.csv
+!iq_tiktok_data/availability.csv
 iq_tiktok_chrome_profil/
 videos/
 frames/

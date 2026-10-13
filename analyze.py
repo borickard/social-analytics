@@ -38,6 +38,7 @@ OUT_HTML = os.path.join(os.path.dirname(CSV_PATH) or ".", "iq_analys.html")
 # och läggs ÖVERST – så modellkörningar (reclassify m.fl.) aldrig skriver över
 # dem. Skapas/uppdateras via "Ladda ner overrides.csv" i dashboarden.
 OVERRIDES_PATH = os.path.join(os.path.dirname(CSV_PATH) or ".", "overrides.csv")
+AVAIL_PATH = os.path.join(os.path.dirname(CSV_PATH) or ".", "availability.csv")
 
 # Fält som går att ändra manuellt i dashboarden, med tillåtna värden. Nycklarna
 # måste matcha kolumnnamnen i enriched.csv (och POSTS-fälten i JS).
@@ -126,6 +127,19 @@ def load_overrides():
     return ov
 
 
+def load_availability():
+    """Läs availability.csv → {video_id: status}. Skrivs av check_availability.py.
+    Tom om filen saknas (då markeras inga inlägg som borttagna)."""
+    av = {}
+    if os.path.exists(AVAIL_PATH):
+        with open(AVAIL_PATH, newline="", encoding="utf-8-sig") as f:
+            for r in csv.DictReader(f):
+                vid = (r.get("video_id") or "").strip()
+                if vid:
+                    av[vid] = (r.get("status") or "").strip()
+    return av
+
+
 def load(path, ov):
     with open(path, newline="", encoding="utf-8-sig") as f:
         rows = list(csv.DictReader(f))
@@ -202,6 +216,7 @@ def post_json(r):
     return {
         "id": vid,
         "url": r.get("url", ""),
+        "gone": bool(r.get("_gone")),          # borttagen/privat på TikTok
         "thumb": r.get("thumbnail", "") or f"thumbnails/{vid}.jpg",
         "caption": (r.get("caption", "") or "")[:180],
         # hela beskrivningen (gemener) för fritextsök, kapad för att hålla nere storleken
@@ -257,6 +272,7 @@ function quantile(s,p){if(!s.length)return 0;const i=(s.length-1)*p,lo=Math.floo
 function levelsOf(posts){const s=posts.map(p=>p.er).sort((a,b)=>a-b);return{q1:quantile(s,.25),med:quantile(s,.5),q3:quantile(s,.75)};}
 const ORG_L=levelsOf(POSTS.filter(p=>p.organic)),BOOST_L=levelsOf(POSTS.filter(p=>!p.organic));
 POSTS.forEach(p=>{const L=p.organic?ORG_L:BOOST_L;p.band=p.er>L.q3?'hög':(p.er<L.q1?'låg':'medel');});
+const BY_ID={};POSTS.forEach(p=>BY_ID[p.id]=p);   // snabb uppslagning per video_id
 
 // Tidsfilter: periodFrom/periodTo (ISO 'YYYY-MM-DD' eller null). Allt nedanför
 // (översikt, graf, dimensioner, topplistor, sök) filtreras på publiceringsdatum.
@@ -368,6 +384,9 @@ function card(p,compact){
   const seg=p.organic?'organiskt':'boostat';
   const check=`<input type="checkbox" class="selbox" data-id="${esc(p.id)}"${sel?' checked':''} title="Markera för bulkändring">`;
   const img=`<img loading="lazy" src="${esc(p.thumb)}" alt="">`;
+  // Borttagna/privata videor: visa märke, dämpa miniatyren, ingen play-knapp.
+  const play=p.gone?'':'<span class="playbtn" aria-hidden="true"></span>';
+  const flag=p.gone?'<span class="goneflag" title="Finns inte längre på TikTok (borttagen eller privat)">borttagen</span>':'';
   const cap=`<div class="pcc">${esc(p.caption)||'<span class="muted">(ingen beskrivning)</span>'}</div>`+
     `<button class="morebtn" data-id="${esc(p.id)}" hidden>${exp?'visa mindre':'läs mer'}</button>`;
   const foot=`<div class="foot"><div class="metaw"><span class="l1">${esc(p.typ)} · ${esc(p.kategori)}</span>`+
@@ -375,13 +394,13 @@ function card(p,compact){
     `<button class="editbtn" data-id="${esc(p.id)}" title="Ändra taggar">✎ ändra</button></div>`;
   if(compact){
     return `<div class="pc compact${sel?' sel':''}${exp?' expanded':''}">${check}`+
-      `<a class="pcimg" href="${esc(p.url)}" data-play="${esc(p.id)}" target="_blank" rel="noopener">${img}<span class="playbtn" aria-hidden="true"></span></a>`+
+      `<a class="pcimg${p.gone?' gone':''}" href="${esc(p.url)}" data-play="${esc(p.id)}" target="_blank" rel="noopener">${img}${play}${flag}</a>`+
       `<div class="pcm"><div class="erline"><span class="er sm">${erInner(p)}</span>${benchHTML(p)}`+
       `${ovd?'<span class="ovmark">ändrad</span>':''}</div>`+
       `<div class="metrics">${metricsHTML(p)}</div>${cap}${foot}</div></div>`;
   }
   return `<div class="pc${sel?' sel':''}${exp?' expanded':''}">${check}`+
-    `<a class="pcimg" href="${esc(p.url)}" data-play="${esc(p.id)}" target="_blank" rel="noopener">${img}<span class="playbtn" aria-hidden="true"></span>`+
+    `<a class="pcimg${p.gone?' gone':''}" href="${esc(p.url)}" data-play="${esc(p.id)}" target="_blank" rel="noopener">${img}${play}${flag}`+
       `<div class="pcoverlay"><span class="er">${erInner(p)}</span>${benchHTML(p)}</div>`+
       `${ovd?'<span class="ovchip">ändrad</span>':''}</a>`+
     `<div class="pcm"><div class="metrics">${metricsHTML(p)}</div>${cap}${foot}</div></div>`;
@@ -740,7 +759,8 @@ function renderFlow(){
     (adj?'<span class="flowbadge adj">justerad</span>':'')+
     (rev?'<span class="flowbadge rev">granskad ✓</span>':'')+'</div>'+
     `<div class="flowcard">`+
-      `<a class="flowimg" href="${esc(p.url)}" data-play="${esc(p.id)}" target="_blank" rel="noopener"><img loading="lazy" src="${esc(p.thumb)}" alt=""><span class="playbtn" aria-hidden="true"></span>`+
+      `<a class="flowimg${p.gone?' gone':''}" href="${esc(p.url)}" data-play="${esc(p.id)}" target="_blank" rel="noopener"><img loading="lazy" src="${esc(p.thumb)}" alt="">`+
+        (p.gone?'<span class="goneflag" title="Finns inte längre på TikTok">borttagen</span>':'<span class="playbtn" aria-hidden="true"></span>')+
         `<span class="er"><b>${fmtPct(p.er)}</b></span>`+(bench?`<span class="bench ${bench.c}">${bench.t}</span>`:'')+`</a>`+
       `<div class="flowbody">`+
         `<div class="flowmeta">${esc(p.typ)} · ${esc(p.kategori)} · ${esc(p.date)} · ${seg} · `+
@@ -805,23 +825,48 @@ function updateOvBar(){const b=document.getElementById('ovbar');if(!b)return;con
 // Spela upp videon direkt på sidan i en lightbox via TikToks officiella
 // inbäddade spelare. Inget API-nyckel behövs – spelaren laddas i en iframe
 // i tittarens egen webbläsare. Öppna-på-TikTok finns alltid som reserv.
+let _lbId=null;   // vilken video som visas i lightboxen just nu
+function lbUnavailable(p){
+  const thumb=(p&&p.thumb)?'<img src="'+esc(p.thumb)+'" alt="">':'';
+  document.getElementById('lbFrame').innerHTML=
+    '<div class="lb-gone">'+thumb+
+    '<div class="lb-gone-msg"><strong>Videon är inte tillgänglig</strong>'+
+    '<p>Den har tagits bort eller gjorts privat på TikTok. Siffrorna och '+
+    'miniatyren finns kvar i dashboarden.</p></div></div>';
+}
 function openVideo(id,url){
   if(!id)return;
-  const src='https://www.tiktok.com/player/v1/'+encodeURIComponent(id)+
-    '?autoplay=1&loop=1&rel=0&music_info=0&description=0&native_context_menu=0';
-  document.getElementById('lbFrame').innerHTML=
-    '<iframe src="'+src+'" allow="autoplay; fullscreen; encrypted-media; picture-in-picture" '+
-    'allowfullscreen scrolling="no" frameborder="0"></iframe>';
-  const op=document.getElementById('lbOpen');if(op)op.href=url||'#';
+  const p=BY_ID[id];_lbId=id;
+  const op=document.getElementById('lbOpen');if(op)op.href=url||(p&&p.url)||'#';
+  if(p&&p.gone){
+    lbUnavailable(p);                                 // känd borttagen → ingen iframe
+  }else{
+    const src='https://www.tiktok.com/player/v1/'+encodeURIComponent(id)+
+      '?autoplay=1&loop=1&rel=0&music_info=0&description=0&native_context_menu=0';
+    document.getElementById('lbFrame').innerHTML=
+      '<iframe src="'+src+'" allow="autoplay; fullscreen; encrypted-media; picture-in-picture" '+
+      'allowfullscreen scrolling="no" frameborder="0"></iframe>';
+  }
   document.getElementById('lightbox').hidden=false;
   document.body.classList.add('noscroll');
 }
 function closeVideo(){
   const lb=document.getElementById('lightbox');if(!lb||lb.hidden)return;
-  lb.hidden=true;
+  lb.hidden=true;_lbId=null;
   document.getElementById('lbFrame').innerHTML='';   // stoppar uppspelningen
   document.body.classList.remove('noscroll');
 }
+// Spelaren postar meddelanden till föräldrafönstret. Rapporterar den ett fel
+// (videon togs bort efter senaste tillgänglighetskontrollen) byter vi till
+// "inte tillgänglig"-vyn i stället för en svart ruta.
+window.addEventListener('message',e=>{
+  let host='';try{host=new URL(e.origin).hostname;}catch(_){return;}
+  if(!/(^|\.)tiktok\.com$/.test(host))return;
+  if(!_lbId||document.getElementById('lightbox').hidden)return;
+  let d=e.data;if(typeof d==='string'){try{d=JSON.parse(d);}catch(_){return;}}
+  const kind=((d&&(d.type||d.event||d.name))||'')+'';
+  if(/error/i.test(kind))lbUnavailable(BY_ID[_lbId]);
+});
 document.addEventListener('click',e=>{
   // Klick på en miniatyr → spela upp i lightbox. Cmd/Ctrl/mittenklick samt
   // högerklick lämnas till webbläsaren så att man kan öppna på TikTok i ny flik.
@@ -953,6 +998,15 @@ def main():
     ana = load(CSV_PATH, ov)
     if not ana:
         sys.exit("Inga analyserade rader med visningar hittades.")
+    avail = load_availability()
+    n_gone = 0
+    for r in ana:
+        if avail.get(r.get("video_id", "")) == "gone":
+            r["_gone"] = True
+            n_gone += 1
+    if avail:
+        print(f"Tillgänglighet: {n_gone} inlägg borttagna/privata på TikTok "
+              f"(av {len(avail)} kontrollerade i availability.csv).")
     attach_benchmarks(ana)
     if ov:
         print(f"Tillämpar {sum(len(v) for v in ov.values())} manuella rättelser "
@@ -1149,6 +1203,11 @@ def main():
       .pcimg:hover .playbtn,.flowimg:hover .playbtn{background:var(--iq-blue);transform:translate(-50%,-50%) scale(1.08);opacity:1}
       .pc.compact .playbtn{width:34px;height:34px}
       .pc.compact .playbtn::before{border-width:7px 0 7px 11px}
+      /* borttagna/privata videor: dämpad miniatyr + litet märke */
+      .pcimg.gone img,.flowimg.gone img{filter:grayscale(1) brightness(.62)}
+      .goneflag{position:absolute;top:8px;left:8px;z-index:3;background:rgba(18,20,26,.82);color:#fff;
+        font-size:9.5px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;
+        padding:3px 7px;border-radius:7px;line-height:1;pointer-events:none}
       /* lightbox-spelare */
       body.noscroll{overflow:hidden}
       .lb{position:fixed;inset:0;z-index:60;display:flex;align-items:center;justify-content:center;padding:24px}
@@ -1159,6 +1218,13 @@ def main():
       .lb-frame{width:100%;aspect-ratio:9/16;max-height:78vh;border-radius:16px;overflow:hidden;
         background:#000;box-shadow:0 30px 80px rgba(0,0,0,.5)}
       .lb-frame iframe{width:100%;height:100%;border:0;display:block}
+      .lb-gone{width:100%;height:100%;position:relative;display:flex;align-items:flex-end}
+      .lb-gone img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;
+        filter:grayscale(1) brightness(.4)}
+      .lb-gone-msg{position:relative;z-index:1;padding:20px 18px;color:#fff;
+        background:linear-gradient(transparent,rgba(10,12,18,.9))}
+      .lb-gone-msg strong{display:block;font-family:var(--disp);font-size:16px;margin-bottom:5px}
+      .lb-gone-msg p{margin:0;font-size:12.5px;color:rgba(255,255,255,.8);line-height:1.5}
       .lb-x{position:absolute;top:-44px;right:-4px;width:36px;height:36px;border-radius:999px;border:none;
         background:rgba(255,255,255,.14);color:#fff;font-size:17px;cursor:pointer;line-height:1}
       .lb-x:hover{background:rgba(255,255,255,.28)}
