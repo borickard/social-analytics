@@ -375,13 +375,13 @@ function card(p,compact){
     `<button class="editbtn" data-id="${esc(p.id)}" title="Ändra taggar">✎ ändra</button></div>`;
   if(compact){
     return `<div class="pc compact${sel?' sel':''}${exp?' expanded':''}">${check}`+
-      `<a class="pcimg" href="${esc(p.url)}" target="_blank" rel="noopener">${img}</a>`+
+      `<a class="pcimg" href="${esc(p.url)}" data-play="${esc(p.id)}" target="_blank" rel="noopener">${img}<span class="playbtn" aria-hidden="true"></span></a>`+
       `<div class="pcm"><div class="erline"><span class="er sm">${erInner(p)}</span>${benchHTML(p)}`+
       `${ovd?'<span class="ovmark">ändrad</span>':''}</div>`+
       `<div class="metrics">${metricsHTML(p)}</div>${cap}${foot}</div></div>`;
   }
   return `<div class="pc${sel?' sel':''}${exp?' expanded':''}">${check}`+
-    `<a class="pcimg" href="${esc(p.url)}" target="_blank" rel="noopener">${img}`+
+    `<a class="pcimg" href="${esc(p.url)}" data-play="${esc(p.id)}" target="_blank" rel="noopener">${img}<span class="playbtn" aria-hidden="true"></span>`+
       `<div class="pcoverlay"><span class="er">${erInner(p)}</span>${benchHTML(p)}</div>`+
       `${ovd?'<span class="ovchip">ändrad</span>':''}</a>`+
     `<div class="pcm"><div class="metrics">${metricsHTML(p)}</div>${cap}${foot}</div></div>`;
@@ -708,7 +708,7 @@ function renderFlow(){
     (adj?'<span class="flowbadge adj">justerad</span>':'')+
     (rev?'<span class="flowbadge rev">granskad ✓</span>':'')+'</div>'+
     `<div class="flowcard">`+
-      `<a class="flowimg" href="${esc(p.url)}" target="_blank" rel="noopener"><img loading="lazy" src="${esc(p.thumb)}" alt="">`+
+      `<a class="flowimg" href="${esc(p.url)}" data-play="${esc(p.id)}" target="_blank" rel="noopener"><img loading="lazy" src="${esc(p.thumb)}" alt=""><span class="playbtn" aria-hidden="true"></span>`+
         `<span class="er"><b>${fmtPct(p.er)}</b></span>`+(bench?`<span class="bench ${bench.c}">${bench.t}</span>`:'')+`</a>`+
       `<div class="flowbody">`+
         `<div class="flowmeta">${esc(p.typ)} · ${esc(p.kategori)} · ${esc(p.date)} · ${seg} · `+
@@ -770,7 +770,34 @@ function updateOvBar(){const b=document.getElementById('ovbar');if(!b)return;con
       `<span class="muted">Spara filen i iq_tiktok_data/ och kör <b>analyze.py</b> igen. `+
       `(Tips: kör <b>serve.py</b> så sparas ändringar automatiskt.)</span>`;}}
 
+// Spela upp videon direkt på sidan i en lightbox via TikToks officiella
+// inbäddade spelare. Inget API-nyckel behövs – spelaren laddas i en iframe
+// i tittarens egen webbläsare. Öppna-på-TikTok finns alltid som reserv.
+function openVideo(id,url){
+  if(!id)return;
+  const src='https://www.tiktok.com/player/v1/'+encodeURIComponent(id)+
+    '?autoplay=1&loop=1&rel=0&music_info=0&description=0&native_context_menu=0';
+  document.getElementById('lbFrame').innerHTML=
+    '<iframe src="'+src+'" allow="autoplay; fullscreen; encrypted-media; picture-in-picture" '+
+    'allowfullscreen scrolling="no" frameborder="0"></iframe>';
+  const op=document.getElementById('lbOpen');if(op)op.href=url||'#';
+  document.getElementById('lightbox').hidden=false;
+  document.body.classList.add('noscroll');
+}
+function closeVideo(){
+  const lb=document.getElementById('lightbox');if(!lb||lb.hidden)return;
+  lb.hidden=true;
+  document.getElementById('lbFrame').innerHTML='';   // stoppar uppspelningen
+  document.body.classList.remove('noscroll');
+}
 document.addEventListener('click',e=>{
+  // Klick på en miniatyr → spela upp i lightbox. Cmd/Ctrl/mittenklick samt
+  // högerklick lämnas till webbläsaren så att man kan öppna på TikTok i ny flik.
+  const pv=e.target.closest('[data-play]');
+  if(pv&&e.button===0&&!e.metaKey&&!e.ctrlKey&&!e.shiftKey&&!e.altKey){
+    e.preventDefault();openVideo(pv.dataset.play,pv.getAttribute('href'));return;}
+  if(e.target.closest('#lbClose')||e.target.id==='lightbox'||e.target.classList.contains('lb-backdrop')){
+    closeVideo();return;}
   const eb=e.target.closest('.editbtn');
   if(eb){openEditor(eb.dataset.id);return;}
   const mb=e.target.closest('.morebtn');
@@ -802,6 +829,9 @@ document.addEventListener('click',e=>{
   const gr=e.target.closest('tr.grow');
   if(gr){const d=gr.dataset.dim,k=gr.dataset.k;const s=openState[d];
     s.has(k)?s.delete(k):s.add(k);renderDim(DIMS.find(x=>x.id===d));return;}
+});
+document.addEventListener('keydown',e=>{
+  if(e.key==='Escape'){closeVideo();if(typeof closeEditor==='function')closeEditor();}
 });
 document.addEventListener('change',e=>{
   const cb=e.target.closest('.selbox');
@@ -1072,6 +1102,32 @@ def main():
       .pcimg{flex:0 0 auto;line-height:0;display:block;position:relative}
       .pcimg img{object-fit:cover;background:var(--line);display:block}
       .pcm{min-width:0;flex:1;display:flex;flex-direction:column}
+      /* play-knapp över miniatyrerna (signalerar att videon spelas upp på sidan) */
+      .playbtn{position:absolute;top:50%;left:50%;width:46px;height:46px;transform:translate(-50%,-50%);
+        border-radius:999px;background:rgba(18,20,26,.52);backdrop-filter:blur(2px);pointer-events:none;
+        display:flex;align-items:center;justify-content:center;opacity:.92;transition:transform .12s,background .12s;z-index:3}
+      .playbtn::before{content:"";border-style:solid;border-width:9px 0 9px 15px;
+        border-color:transparent transparent transparent #fff;margin-left:3px}
+      .pcimg:hover .playbtn,.flowimg:hover .playbtn{background:var(--iq-blue);transform:translate(-50%,-50%) scale(1.08);opacity:1}
+      .pc.compact .playbtn{width:34px;height:34px}
+      .pc.compact .playbtn::before{border-width:7px 0 7px 11px}
+      /* lightbox-spelare */
+      body.noscroll{overflow:hidden}
+      .lb{position:fixed;inset:0;z-index:60;display:flex;align-items:center;justify-content:center;padding:24px}
+      .lb[hidden]{display:none}
+      .lb-backdrop{position:absolute;inset:0;background:rgba(10,12,18,.82);backdrop-filter:blur(3px)}
+      .lb-inner{position:relative;z-index:1;display:flex;flex-direction:column;align-items:center;gap:12px;
+        width:min(92vw,340px)}
+      .lb-frame{width:100%;aspect-ratio:9/16;max-height:78vh;border-radius:16px;overflow:hidden;
+        background:#000;box-shadow:0 30px 80px rgba(0,0,0,.5)}
+      .lb-frame iframe{width:100%;height:100%;border:0;display:block}
+      .lb-x{position:absolute;top:-44px;right:-4px;width:36px;height:36px;border-radius:999px;border:none;
+        background:rgba(255,255,255,.14);color:#fff;font-size:17px;cursor:pointer;line-height:1}
+      .lb-x:hover{background:rgba(255,255,255,.28)}
+      .lb-open{color:#fff;font-size:13.5px;font-weight:700;text-decoration:none;opacity:.85;
+        border:1px solid rgba(255,255,255,.3);border-radius:999px;padding:7px 15px}
+      .lb-open:hover{opacity:1;background:rgba(255,255,255,.12)}
+      @media(max-width:560px){.lb-x{top:-42px}}
       /* ER-badge (bara siffran; "viktad ER" vid hover) + median-chip */
       .er{position:absolute;background:var(--iq-blue);color:#fff;border-radius:12px;
         padding:7px 11px;box-shadow:0 6px 16px rgba(19,89,197,.42);line-height:1}
@@ -1316,6 +1372,13 @@ def main():
               '<div class="mfoot"><button class="pill" id="edCancel">Avbryt</button>'
               '<button class="pill dark" id="edSave">Spara</button></div>'
               '</div></div>')
+    lightbox = ('<div id="lightbox" class="lb" hidden>'
+                '<div class="lb-backdrop"></div>'
+                '<div class="lb-inner">'
+                '<button class="lb-x" id="lbClose" title="Stäng (Esc)">✕</button>'
+                '<div class="lb-frame" id="lbFrame"></div>'
+                '<a class="lb-open" id="lbOpen" target="_blank" rel="noopener">Öppna på TikTok ↗</a>'
+                '</div></div>')
     ovbar = ('<div class="ovbar" id="bulkbar" hidden></div>'
              '<div class="ovbar" id="ovbar"></div>')
 
@@ -1333,7 +1396,7 @@ def main():
            f'</head><body><div class="wrap"><div class="layout">'
            f'<aside class="sidebar">{header}</aside>'
            f'<main class="main">{seg}{tabs}{insikter_panel}{topp_panel}{justering_panel}</main>'
-           f'</div></div>{editor}{ovbar}'
+           f'</div></div>{editor}{lightbox}{ovbar}'
            f'<script>window.POSTS={data_js};window.HAS_TONE={str(has_tone).lower()};'
            f'window.HAS_OCCASION={str(has_occasion).lower()};'
            f'window.OVERRIDES={ov_js};window.EDITABLE={edit_js};</script>'
