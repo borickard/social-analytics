@@ -814,7 +814,8 @@ function clearLocal(){if(!confirm('Rensa lokala (osparade) ändringar? Redan spa
 function updateOvBar(){const b=document.getElementById('ovbar');if(!b)return;const n=Object.keys(OV).length;
   if(AUTOSAVE){
     b.innerHTML=`<span><b>${n}</b> inlägg med manuella ändringar</span>`+
-      `<span class="muted" id="ovstatus">ändringar sparas automatiskt</span>`;
+      `<span class="muted" id="ovstatus">ändringar sparas automatiskt</span>`+
+      (n?`<button class="pill" data-act="dl" title="Exportera dina ändringar som overrides.csv att dela/baka in">⬇ Ladda ner mina ändringar</button>`:'');
   }else{
     b.innerHTML=`<span><b>${n}</b> inlägg med manuella ändringar</span>`+
       `<button class="pill dark" data-act="dl">⬇ Ladda ner overrides.csv</button>`+
