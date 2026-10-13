@@ -235,6 +235,15 @@ def post_json(r):
 APP_JS = r"""
 const fmtPct = e => (e*100).toFixed(2).replace('.',',')+' %';
 const fmtNum = n => Math.round(n).toLocaleString('sv-SE');
+// Kortform för väldigt stora tal: 276 860 300 → "276,9 m". Exakt tal visas
+// vid hover (title). Under en miljon visas talet oavkortat.
+function compactNum(n){
+  n=Math.round(n);const a=Math.abs(n);
+  const dec=x=>x.toLocaleString('sv-SE',{maximumFractionDigits:1});
+  if(a>=1e9)return dec(n/1e9)+' md';
+  if(a>=1e6)return dec(n/1e6)+' m';
+  return fmtNum(n);
+}
 const esc = s => (s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const median = a => {if(!a.length)return 0;const s=[...a].sort((x,y)=>x-y);const m=s.length>>1;return s.length%2?s[m]:(s[m-1]+s[m])/2;};
 const mean = a => a.length?a.reduce((x,y)=>x+y,0)/a.length:0;
@@ -465,17 +474,18 @@ function renderOverview(){
   const wSum=ps.reduce((a,p)=>a+(p.likes+p.kommentarer*5+p.delningar*10+p.sparade*5),0);
   const erSnitt=sumV?wSum/sumV:0;
   const tr=trendOf(quartersAgg(ps));
-  const fmtBig=x=>fmtNum(x).replace(/ /g,' ');   // vanliga mellanslag → kan radbrytas vid behov
+  // Stora tal i kortform; exakt tal vid hover (title).
+  const bigv=x=>`<span title="${fmtNum(x)} exakt">${compactNum(x)}</span>`;
   const tile=(v,l,ac)=>`<div class="c${ac?' '+ac:''}"><div class="big">${v}</div><div class="muted">${l}</div></div>`;
   const sr=document.getElementById('statrow');
-  if(sr)sr.innerHTML=tile(fmtBig(n),'inlägg')+tile(fmtBig(sumV),'visningar')+
+  if(sr)sr.innerHTML=tile(bigv(n),'inlägg')+tile(bigv(sumV),'visningar')+
     tile(n?fmtPct(erMed):'–','eng.rate median','ac-pink')+
     tile(n?fmtPct(erSnitt):'–','eng.rate snitt','ac-blue')+
     tile(tr.verdict,'trend','wide');
   const ir=document.getElementById('introw');
   if(ir)ir.innerHTML=
     [['like',sumL,'likes'],['comment',sumK,'kommentarer'],['share',sumD,'delningar'],['save',sumS,'sparade']]
-     .map(([k,v,t])=>`<div class="imc"><span class="imi">${ICON[k]}</span><div class="imv">${fmtBig(v)}</div><div class="imt">${t}</div></div>`).join('');
+     .map(([k,v,t])=>`<div class="imc"><span class="imi">${ICON[k]}</span><div class="imv" title="${fmtNum(v)} exakt">${compactNum(v)}</div><div class="imt">${t}</div></div>`).join('');
 }
 function renderChart(){
   const gran=chartGran(),series=timeAgg(segPosts(),gran);
@@ -931,8 +941,7 @@ def main():
         .layout{grid-template-columns:420px minmax(0,1fr);gap:26px;align-items:start}
         .sidebar{position:sticky;top:20px}
         .sidebar .hero{margin-bottom:0}
-        .sidebar .hero h1{font-size:26px;margin-bottom:8px}
-        .sidebar .hero .lead{font-size:12.5px;margin-bottom:16px}
+        .sidebar .hero h1{font-size:26px;margin-bottom:14px}
         .sidebar .stat{display:grid;grid-template-columns:1fr 1fr;gap:10px}
         .sidebar .stat .c.wide{grid-column:1/-1}
         .sidebar .introw{grid-template-columns:1fr 1fr}
@@ -947,9 +956,7 @@ def main():
       .hero>*{position:relative;z-index:1}
       .eyebrow{font-size:12px;font-weight:700;letter-spacing:.15em;text-transform:uppercase;
         color:var(--iq-pink);margin:0 0 8px}
-      .hero h1{color:#fff;margin:0 0 10px}
-      .hero .lead{color:rgba(255,255,255,.76);max-width:74ch;margin:0 0 20px;font-size:14.5px}
-      .hero .lead b{color:#fff;font-weight:650}
+      .hero h1{color:#fff;margin:0 0 18px}
       .logout{position:absolute;top:22px;right:24px;z-index:2;font-size:12px;font-weight:700;
         color:#fff;text-decoration:none;border:1px solid rgba(255,255,255,.32);
         border-radius:999px;padding:6px 13px;background:rgba(255,255,255,.12)}
@@ -979,6 +986,17 @@ def main():
       .imc .imv{font-family:var(--disp);font-size:19px;font-weight:800;color:#fff;line-height:1.12;
         margin-top:5px;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
       .imc .imt{font-size:11.5px;color:rgba(255,255,255,.72);margin-top:1px}
+      .hero-foot{font-size:11.5px;color:rgba(255,255,255,.55);margin:16px 0 0;line-height:1.5}
+      /* förklaringsruta (hopfällbar) */
+      .explain{background:var(--card);border:1px solid var(--line);border-radius:12px;
+        padding:2px 16px;margin:0 0 20px}
+      .explain summary{font-family:var(--disp);font-weight:700;color:var(--iq-navy);
+        font-size:14.5px;cursor:pointer;padding:12px 0;list-style:none}
+      .explain summary::-webkit-details-marker{display:none}
+      .explain summary::before{content:"▸ ";color:var(--iq-blue)}
+      .explain[open] summary::before{content:"▾ "}
+      .explain p{margin:0 0 14px;font-size:13.5px;color:var(--muted);line-height:1.6;max-width:72ch}
+      .explain p b{color:var(--ink);font-weight:650}
       /* periodrad */
       .period{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:2px 0 10px}
       .period .lbl{font-size:11px;text-transform:uppercase;letter-spacing:.09em;color:var(--muted);font-weight:700;margin-right:2px}
@@ -1114,8 +1132,10 @@ def main():
       .pc.compact .tip{bottom:auto;top:calc(100% + 8px)}
       .pc.compact .pcc{-webkit-line-clamp:3;min-height:calc(1.45em * 3);margin-top:7px}
       .two{display:flex;gap:20px;flex-wrap:wrap} .two>div{flex:1;min-width:300px}
-      .ranklist{display:grid;grid-template-columns:repeat(var(--cols),minmax(0,1fr));gap:12px;margin:10px 0 22px}
-      @media(max-width:360px){.ranklist{grid-template-columns:1fr}}
+      /* topplistorna: egen responsiv rutnät som fyller hela bredden oavsett
+         kolumnvalet – kompaktkorten (bild + text) behöver ~270px för att se bra ut */
+      .ranklist{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(270px,100%),1fr));
+        gap:12px;margin:10px 0 22px}
       .rankitem{display:flex;flex-direction:column;height:100%}
       .rankitem>.pc{flex:1}
       .ranksec{margin-bottom:10px}
@@ -1220,13 +1240,11 @@ def main():
               f'<a href="/logout" id="logoutlink" class="logout" hidden>Logga ut</a>'
               f'<p class="eyebrow">Innehåll × engagemang</p>'
               f'<h1>IQ × TikTok Dashboard</h1>'
-              f'<p class="lead">{len(ana)} analyserade inlägg. <b>Viktad ER</b> = '
-              f'(likes + kommentarer×5 + delningar×10 + favoriter×5) / visningar, '
-              f'visad som median per grupp. Översikten och allt nedanför följer '
-              f'segment- och periodvalet.</p>'
               f'<div class="stat" id="statrow"></div>'
               f'<p class="introw-lbl">Interaktioner</p>'
               f'<div class="introw" id="introw"></div>'
+              f'<p class="hero-foot">{len(ana)} analyserade inlägg · '
+              f'översikten och allt nedanför följer segment- och periodvalet</p>'
               f'</header>')
 
     seg = ('<div class="seg"><span class="lbl">Segment</span>'
@@ -1254,7 +1272,13 @@ def main():
               '<section><h2 id="chart-title">Engagemang över tid</h2>'
               '<div id="chart"></div><p id="chart-note" class="muted"></p></section>')
 
-    insikter_panel = f'<div class="tabpanel" data-tab="insikter">{charts}<div id="dims"></div></div>'
+    explain = ('<details class="explain"><summary>Vad är viktad engagement rate?</summary>'
+               '<p><b>Viktad ER</b> = (likes + kommentarer×5 + delningar×10 + favoriter×5) '
+               '/ visningar. Kommentarer, delningar och sparningar väger tyngre än likes '
+               'eftersom de kräver mer av tittaren. Siffran visas som <b>median per grupp</b> '
+               '(mindre känslig för enstaka virala toppar än ett snitt).</p></details>')
+
+    insikter_panel = f'<div class="tabpanel" data-tab="insikter">{explain}{charts}<div id="dims"></div></div>'
 
     topp_panel = (f'<div class="tabpanel" data-tab="topp" hidden>'
                   f'<section><h2>Topplistor</h2>'
