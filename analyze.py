@@ -803,9 +803,9 @@ function showTab(name){
 const OV_ENDPOINT='/api/overrides';
 // Spara bara de ÄNDRADE fälten (deltas) till den delade databasen – aldrig hela
 // blobben. Då kan två personer spara samtidigt utan att skriva över varandra.
-function pushDeltas(changes){
+function pushDeltas(changes,quiet){
   if(!AUTOSAVE||!changes||!changes.length)return;
-  const s=document.getElementById('ovstatus');
+  const s=quiet?null:document.getElementById('ovstatus');
   fetch(OV_ENDPOINT,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({deltas:changes})})
     .then(r=>r.ok?r.json():Promise.reject())
     .then(()=>{if(s)s.textContent='sparat ✓ (synkat till alla)';})
@@ -1001,12 +1001,22 @@ function syncOverrides(initial){
       for(const f in c[v]){if(cur[f]!==c[v][f])changed=true;}
       OV[v]=Object.assign(OV[v]||{},c[v]);}
     saveLS();
+    if(initial)seedBaseline(c);
     if(!changed&&!initial)return;
     // Stör inte pågående redigering – nästa synk tar det när rutan stängts.
     const busy=!document.getElementById('editor').hidden||(typeof SEL!=='undefined'&&SEL.size>0);
     if(busy&&!initial)return;
     applyOv();updateOvBar();renderAll();
   }).catch(()=>{});
+}
+// Engångs-sådd: lägg den inbakade baslinjen i databasen om den inte redan finns
+// där, så databasen blir den enda sanningen. Skriver bara fält som SAKNAS i KV
+// (rör aldrig något som redan ändrats där), så det körs i praktiken bara en gång.
+function seedBaseline(kv){
+  const disk=window.OVERRIDES||{};const seed=[];
+  for(const id in disk){const kf=(kv&&kv[id])||{};
+    for(const f in disk[id]){if(!(f in kf))seed.push({id,field:f,value:disk[id][f]});}}
+  if(seed.length)pushDeltas(seed,true);
 }
 syncOverrides(true);
 setInterval(()=>{if(document.visibilityState==='visible')syncOverrides(false);},25000);
