@@ -18,8 +18,10 @@ RÄCKVIDD (reach) ingår INTE med flit – det kräver TikTok Studio och är den
 enda knöliga biten. Vi utgår från visningar (playCount). Reach kan joinas in
 på video-id senare via en manuell CSV-export.
 
-Körning är återupptagbar: redan hämtade videor hoppas över, så du kan avbryta
-och köra igen.
+Körning är återupptagbar: redan hämtade videor hoppas över (SKIP_SCRAPED), så
+en körning laddar i praktiken bara ner det som publicerats sedan förra gången.
+Inlägg yngre än MIN_AGE_DAYS (default 8) hoppas över eftersom de inte boostats
+färdigt än – de tas med automatiskt vid en senare körning när de hunnit åldras.
 
 Förberedelser (engångs)
 -----------------------
@@ -90,6 +92,12 @@ MIN_DELAY, MAX_DELAY = 2.5, 5.0
 # Begränsa antal inlägg (nyast först). Bra för att testa. Sätt 0 för alla.
 MAX_VIDEOS = 0
 
+# Hoppa över inlägg som är yngre än så här många dagar – de har inte boostats
+# färdigt, så deras siffror är inte representativa än. De plockas upp automatiskt
+# vid en senare körning när de hunnit bli äldre. 0 = ta med allt. Åldern avgörs
+# ur video-id:t (TikToks id bär publiceringstidpunkten) – inget nätverk krävs.
+MIN_AGE_DAYS = int(os.environ.get("IQ_MIN_AGE_DAYS", "8") or 8)
+
 CSV_FIELDS = [
     "video_id", "url", "typ", "publiceringsdatum", "langd_sek", "antal_bilder",
     "visningar", "likes", "kommentarer", "delningar", "sparade",
@@ -107,6 +115,17 @@ IMG_UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
 
 def sleep_a_bit():
     time.sleep(random.uniform(MIN_DELAY, MAX_DELAY))
+
+
+def post_age_days(video_id):
+    """Inläggets ålder i dagar, härledd ur video-id:t (TikTok/Snowflake: de övre
+    32 bitarna är publiceringens unix-tid). Okänt/ogiltigt id → väldigt gammalt
+    (tas med), så filtret aldrig råkar missa ett riktigt inlägg."""
+    try:
+        ts = int(video_id) >> 32
+        return (time.time() - ts) / 86400.0
+    except Exception:
+        return 1e9
 
 
 def load_existing():
@@ -426,6 +445,12 @@ def main():
         for i, url in enumerate(urls, 1):
             vid = url.rstrip("/").split("/")[-1]
             is_photo = "/photo/" in url
+
+            # Hoppa över inlägg som inte boostats färdigt än (yngre än gränsen).
+            if MIN_AGE_DAYS and post_age_days(vid) < MIN_AGE_DAYS:
+                print(f"[{i}/{len(urls)}] {vid} – yngre än {MIN_AGE_DAYS} dagar "
+                      f"(ej färdigboostad), hoppar över")
+                continue
             # Är själva mediet (video ELLER bilder) + thumbnail redan på disk?
             have_media = ((images_exist(vid) if is_photo else video_exists(vid))
                           and thumb_exists(vid))
