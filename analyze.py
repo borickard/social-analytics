@@ -698,10 +698,10 @@ function updateBulkBar(){
 }
 function applyBulk(){
   const vsel=document.getElementById('bulkValue');if(!vsel)return;
-  const v=vsel.value;let n=0;
+  const v=vsel.value;let n=0;const changes=[];
   SEL.forEach(id=>{const p=POSTS.find(x=>x.id===id);if(!p)return;
-    if(v!==(p[bulkField]||'')){OV[id]=OV[id]||{};OV[id][bulkField]=v;n++;}});
-  saveLS();applyOv();if(AUTOSAVE)postOverrides();
+    if(v!==(p[bulkField]||'')){OV[id]=OV[id]||{};OV[id][bulkField]=v;changes.push({id,field:bulkField,value:v});n++;}});
+  saveLS();applyOv();pushDeltas(changes);
   SEL.clear();updateOvBar();renderAll();updateBulkBar();
   const s=document.getElementById('ovstatus');if(s&&!AUTOSAVE)s.textContent=`${n} inlägg ändrade – ladda ner för att spara`;
 }
@@ -717,9 +717,10 @@ function openEditor(id){editId=id;const p=POSTS.find(x=>x.id===id);if(!p)return;
   document.getElementById('editor').hidden=false;}
 function closeEditor(){document.getElementById('editor').hidden=true;editId=null;}
 function saveEditor(){const p=POSTS.find(x=>x.id===editId);if(!p){closeEditor();return;}
+  const changes=[];
   document.querySelectorAll('#edFields select').forEach(sel=>{const f=sel.dataset.f,v=sel.value;
-    if(v!==(p[f]||'')){OV[editId]=OV[editId]||{};OV[editId][f]=v;}});
-  saveLS();applyOv();if(AUTOSAVE)postOverrides();updateOvBar();closeEditor();renderAll();}
+    if(v!==(p[f]||'')){OV[editId]=OV[editId]||{};OV[editId][f]=v;changes.push({id:editId,field:f,value:v});}});
+  saveLS();applyOv();pushDeltas(changes);updateOvBar();closeEditor();renderAll();}
 
 /* ---- Justeringsflöde: gå igenom inläggen ett i taget och rätta taggar ---- */
 const REV_KEY='iq_reviewed_'+POSTS.length;
@@ -776,7 +777,7 @@ function renderFlow(){
       `<button class="pill dark" data-flow="done">Granskad ✓ → nästa</button></div>`;
 }
 function flowSet(id,field,value){const p=POSTS.find(x=>x.id===id);if(!p||value===(p[field]||''))return;
-  OV[id]=OV[id]||{};OV[id][field]=value;saveLS();applyOv();if(AUTOSAVE)postOverrides();
+  OV[id]=OV[id]||{};OV[id][field]=value;saveLS();applyOv();pushDeltas([{id,field,value}]);
   updateOvBar();renderAll();renderFlow();}
 function flowAct(act){
   if(!flowList.length)return;const id=flowList[flowIdx];
@@ -800,10 +801,15 @@ function showTab(name){
   if(name==='justering')renderFlow();
   requestAnimationFrame(refreshMore);}
 const OV_ENDPOINT='/api/overrides';
-function postOverrides(){
-  fetch(OV_ENDPOINT,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(OV)})
-    .then(r=>r.ok?r.json():Promise.reject()).then(()=>{const s=document.getElementById('ovstatus');if(s)s.textContent='sparat ✓';})
-    .catch(()=>{const s=document.getElementById('ovstatus');if(s)s.textContent='kunde inte spara automatiskt – ladda ner i stället';});}
+// Spara bara de ÄNDRADE fälten (deltas) till den delade databasen – aldrig hela
+// blobben. Då kan två personer spara samtidigt utan att skriva över varandra.
+function pushDeltas(changes){
+  if(!AUTOSAVE||!changes||!changes.length)return;
+  const s=document.getElementById('ovstatus');
+  fetch(OV_ENDPOINT,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({deltas:changes})})
+    .then(r=>r.ok?r.json():Promise.reject())
+    .then(()=>{if(s)s.textContent='sparat ✓ (synkat till alla)';})
+    .catch(()=>{if(s)s.textContent='kunde inte spara automatiskt – ladda ner i stället';});}
 function exportCsv(){let rows=[['video_id','field','value']];
   for(const v in OV)for(const f in OV[v])rows.push([v,f,OV[v][f]]);
   const csv=rows.map(r=>r.map(c=>'"'+String(c).replace(/"/g,'""')+'"').join(',')).join('\n');
@@ -983,12 +989,27 @@ const _fsearch=document.getElementById('fsearch');
 if(_fsearch)_fsearch.addEventListener('input',()=>{flowQuery=_fsearch.value;flowIdx=0;renderFlow();});
 let _initTab='insikter';try{_initTab=localStorage.getItem('iq_tab')||'insikter';}catch(e){}
 showTab(_initTab);
-// När sajten serveras (serve.py lokalt eller Vercel): hämta molnets overrides
-// och lägg överst, så alla ser samma rättelser.
-if(AUTOSAVE){fetch(OV_ENDPOINT).then(r=>r.ok?r.json():{}).then(c=>{
-  if(c&&typeof c==='object'&&Object.keys(c).length){
-    for(const v in c)OV[v]=Object.assign(OV[v]||{},c[v]);
-    saveLS();applyOv();updateOvBar();renderAll();}}).catch(()=>{});}
+// När sajten serveras (serve.py lokalt eller Vercel): håll sidan i synk med den
+// delade databasen. Hämtas vid start och sedan med jämna mellanrum, så en
+// ändring som någon annan gör dyker upp automatiskt – utan att man laddar om.
+function syncOverrides(initial){
+  if(!AUTOSAVE)return;
+  fetch(OV_ENDPOINT).then(r=>r.ok?r.json():{}).then(c=>{
+    if(!c||typeof c!=='object')return;
+    let changed=false;
+    for(const v in c){const cur=OV[v]||{};
+      for(const f in c[v]){if(cur[f]!==c[v][f])changed=true;}
+      OV[v]=Object.assign(OV[v]||{},c[v]);}
+    saveLS();
+    if(!changed&&!initial)return;
+    // Stör inte pågående redigering – nästa synk tar det när rutan stängts.
+    const busy=!document.getElementById('editor').hidden||(typeof SEL!=='undefined'&&SEL.size>0);
+    if(busy&&!initial)return;
+    applyOv();updateOvBar();renderAll();
+  }).catch(()=>{});
+}
+syncOverrides(true);
+setInterval(()=>{if(document.visibilityState==='visible')syncOverrides(false);},25000);
 """
 
 
