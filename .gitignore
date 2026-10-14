@@ -11,6 +11,8 @@ env/
 iq_tiktok_data/*
 !iq_tiktok_data/iq_tiktok_enriched.csv
 !iq_tiktok_data/availability.csv
+# Manuella taggrättelser bakas in i bygget så ALLA ser samma (oberoende av KV).
+!iq_tiktok_data/overrides.csv
 iq_tiktok_chrome_profil/
 videos/
 frames/
