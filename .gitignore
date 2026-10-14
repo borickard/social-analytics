@@ -29,3 +29,6 @@ studio_export.csv
 
 # Hemligheter
 .env
+
+# Node
+node_modules/

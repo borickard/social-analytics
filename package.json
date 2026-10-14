@@ -1,0 +1,8 @@
+{
+  "name": "social-analytics",
+  "private": true,
+  "description": "Delad databas (api/overrides) för IQ TikTok-dashboarden.",
+  "dependencies": {
+    "redis": "^4.7.0"
+  }
+}

@@ -1,62 +1,76 @@
 // Serverless-funktion: den DELADE databasen för manuella taggrättelser.
-// Lagras i Vercels KV (Upstash Redis) som en HASH – ett fält per
+// Lagras i en Redis-store (Vercel → Storage) som en HASH – ett fält per
 // (video_id, fält), så två personer som sparar samtidigt aldrig skriver över
-// varandra. Miljövariablerna injiceras automatiskt när du kopplar en KV-store
-// till projektet (Storage → Connect) och gör en redeploy.
+// varandra. Fungerar med vilken Redis som helst (Redis Cloud, Upstash m.fl.)
+// via en vanlig redis://- eller rediss://-URL i en miljövariabel.
 //
 //   GET   → hela databasen som {video_id:{fält:värde}}
 //   POST  {deltas:[{id,field,value}]} → skriver bara de ändrade fälten
 //           (value===null tar bort fältet). En plain {id:{fält:värde}} tolkas
 //           också som deltas och VÄVS IN (skriver aldrig över hela blobben).
+const { createClient } = require('redis');
+
 const HKEY = 'iq_overrides_h';     // Redis-HASH, fält = "<video_id>::<fält>"
-const LEGACY = 'iq_overrides';     // äldre helblob (sträng) – läses in en gång
+const LEGACY = 'iq_overrides';     // äldre helblob (sträng) – läses in om den finns
 const SEP = '::';
 
-function findEnv(suffix) {
+// Hitta anslutnings-URL:en oavsett vad miljövariabeln råkar heta.
+function redisUrl() {
+  const named = ['REDIS_URL', 'KV_REDIS_URL', 'KV_URL', 'REDIS_URI',
+    'STORAGE_REDIS_URL', 'UPSTASH_REDIS_URL'];
+  for (const n of named) {
+    const v = process.env[n];
+    if (v && /^rediss?:\/\//.test(v)) return v;
+  }
   for (const k of Object.keys(process.env)) {
-    if (k.endsWith(suffix)) return process.env[k];
+    const v = process.env[k];
+    if (v && /^rediss?:\/\//.test(v)) return v;
   }
   return undefined;
 }
-const REST_URL = process.env.KV_REST_API_URL || process.env.UPSTASH_REDIS_REST_URL
-  || findEnv('_REST_API_URL');
-const REST_TOKEN = process.env.KV_REST_API_TOKEN || process.env.UPSTASH_REDIS_REST_TOKEN
-  || findEnv('_REST_API_TOKEN');
+
+// Återanvänd klienten mellan (varma) anrop i stället för att koppla upp varje gång.
+let _clientPromise = null;
+function getClient() {
+  if (_clientPromise) return _clientPromise;
+  const url = redisUrl();
+  if (!url) return Promise.reject(new Error('no-redis-url'));
+  const client = createClient({ url });
+  client.on('error', () => {});   // svälj fel så en trasig anslutning inte kraschar processen
+  _clientPromise = client.connect().then(() => client).catch((e) => {
+    _clientPromise = null;        // tillåt nytt försök vid nästa anrop
+    throw e;
+  });
+  return _clientPromise;
+}
 
 module.exports = async (req, res) => {
-  if (!REST_URL || !REST_TOKEN) {
-    res.status(500).json({ error: 'KV-store saknas – koppla en i Vercel (Storage) och gör en redeploy.' });
+  let client;
+  try {
+    client = await getClient();
+  } catch (e) {
+    res.status(500).json({ error: 'KV-store saknas eller går inte att nå – koppla en Redis i Vercel (Storage), sätt dess URL som miljövariabel och gör en redeploy.' });
     return;
   }
-  const headers = { Authorization: 'Bearer ' + REST_TOKEN, 'Content-Type': 'application/json' };
-  const cmd = async (args) => {
-    const r = await fetch(REST_URL, { method: 'POST', headers, body: JSON.stringify(args) });
-    return r.json();
-  };
-  const pipeline = async (cmds) => {
-    const r = await fetch(REST_URL + '/pipeline', { method: 'POST', headers, body: JSON.stringify(cmds) });
-    return r.json();
-  };
 
   try {
     if (req.method === 'GET') {
       const nested = {};
       // Äldre helblob (om den finns) läggs som grund så inget historiskt tappas.
       try {
-        const l = await cmd(['GET', LEGACY]);
-        if (l && l.result) {
-          const o = JSON.parse(l.result);
+        const legacy = await client.get(LEGACY);
+        if (legacy) {
+          const o = JSON.parse(legacy);
           for (const id in o) if (o[id] && typeof o[id] === 'object') nested[id] = Object.assign({}, o[id]);
         }
       } catch (e) { /* ignorera trasig/legacy-data */ }
       // Hashen (den aktuella delade databasen) läggs överst.
-      const h = await cmd(['HGETALL', HKEY]);
-      const arr = (h && h.result) || [];
-      for (let i = 0; i + 1 < arr.length; i += 2) {
-        const k = String(arr[i]); const ix = k.indexOf(SEP);
+      const h = await client.hGetAll(HKEY);   // {"<id>::<fält>": "<värde>"}
+      for (const k in h) {
+        const ix = k.indexOf(SEP);
         if (ix < 0) continue;
         const id = k.slice(0, ix), f = k.slice(ix + SEP.length);
-        (nested[id] = nested[id] || {})[f] = arr[i + 1];
+        (nested[id] = nested[id] || {})[f] = h[k];
       }
       res.status(200).json(nested);
       return;
@@ -79,15 +93,17 @@ module.exports = async (req, res) => {
         }
       }
 
-      const cmds = [];
+      let written = 0;
+      const m = client.multi();
       for (const d of deltas) {
         if (!d || !d.id || !d.field) continue;
         const field = String(d.id) + SEP + String(d.field);
-        if (d.value === null || d.value === undefined) cmds.push(['HDEL', HKEY, field]);
-        else cmds.push(['HSET', HKEY, field, String(d.value)]);
+        if (d.value === null || d.value === undefined) m.hDel(HKEY, field);
+        else m.hSet(HKEY, field, String(d.value));
+        written++;
       }
-      if (cmds.length) await pipeline(cmds);
-      res.status(200).json({ ok: true, written: cmds.length });
+      if (written) await m.exec();
+      res.status(200).json({ ok: true, written });
       return;
     }
 
