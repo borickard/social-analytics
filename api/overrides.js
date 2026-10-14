@@ -35,8 +35,14 @@ function getClient() {
   if (_clientPromise) return _clientPromise;
   const url = redisUrl();
   if (!url) return Promise.reject(new Error('no-redis-url'));
-  const client = createClient({ url });
+  // Failar snabbt om databasen inte går att nå (annars skulle anropet hänga tills
+  // Vercels timeout). Några korta återförsök tål tillfälliga avbrott.
+  const client = createClient({ url, socket: {
+    connectTimeout: 4000,
+    reconnectStrategy: (retries) => (retries > 3 ? false : Math.min(retries * 200, 1000)),
+  } });
   client.on('error', () => {});   // svälj fel så en trasig anslutning inte kraschar processen
+  client.on('end', () => { _clientPromise = null; });   // koppla upp på nytt vid nästa anrop
   _clientPromise = client.connect().then(() => client).catch((e) => {
     _clientPromise = null;        // tillåt nytt försök vid nästa anrop
     throw e;
