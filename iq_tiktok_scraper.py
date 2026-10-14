@@ -20,7 +20,7 @@ på video-id senare via en manuell CSV-export.
 
 Körning är återupptagbar: redan hämtade videor hoppas över (SKIP_SCRAPED), så
 en körning laddar i praktiken bara ner det som publicerats sedan förra gången.
-Inlägg yngre än MIN_AGE_DAYS (default 8) hoppas över eftersom de inte boostats
+Inlägg yngre än MIN_AGE_DAYS (default 10) hoppas över eftersom de inte boostats
 färdigt än – de tas med automatiskt vid en senare körning när de hunnit åldras.
 
 Förberedelser (engångs)
@@ -96,7 +96,7 @@ MAX_VIDEOS = 0
 # färdigt, så deras siffror är inte representativa än. De plockas upp automatiskt
 # vid en senare körning när de hunnit bli äldre. 0 = ta med allt. Åldern avgörs
 # ur video-id:t (TikToks id bär publiceringstidpunkten) – inget nätverk krävs.
-MIN_AGE_DAYS = int(os.environ.get("IQ_MIN_AGE_DAYS", "8") or 8)
+MIN_AGE_DAYS = int(os.environ.get("IQ_MIN_AGE_DAYS", "10") or 10)
 
 CSV_FIELDS = [
     "video_id", "url", "typ", "publiceringsdatum", "langd_sek", "antal_bilder",
