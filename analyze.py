@@ -799,6 +799,7 @@ function showTab(name){
   document.querySelectorAll('.tab').forEach(b=>b.classList.toggle('active',b.dataset.tab===name));
   try{localStorage.setItem('iq_tab',name);}catch(e){}
   if(name==='justering')renderFlow();
+  if(name==='sok'){const sb=document.getElementById('searchbox');if(sb)setTimeout(()=>sb.focus(),30);}
   requestAnimationFrame(refreshMore);}
 const OV_ENDPOINT='/api/overrides';
 // Spara bara de ÄNDRADE fälten (deltas) till den delade databasen – aldrig hela
@@ -1467,6 +1468,7 @@ def main():
     tabs = ('<div class="tabs" role="tablist">'
             '<button class="tab active" data-tab="insikter">Insikter</button>'
             '<button class="tab" data-tab="topp">Topplistor</button>'
+            '<button class="tab" data-tab="sok">Sök</button>'
             '<button class="tab" data-tab="justering">Justering</button></div>')
 
     # Tidsgrafen ritas av JS-appen (uppdateras med segment-/periodvalet).
@@ -1490,10 +1492,14 @@ def main():
                   f'Klicka för att öppna på TikTok.</p><div id="rank"></div></section></div>')
 
     search = ('<section><h2>Sök i beskrivningar</h2>'
+              '<p class="muted">Skriv ett nyckelord – listar alla inlägg vars beskrivning '
+              'innehåller det (följer segment- och periodvalet).</p>'
               '<input id="searchbox" type="search" autocomplete="off" '
-              'placeholder="Skriv ett ord – visar alla inlägg vars beskrivning innehåller det">'
+              'placeholder="t.ex. valborg, promille, tips …">'
               '<div id="searchinfo" class="muted"></div>'
               '<div id="searchres"></div></section>')
+
+    sok_panel = f'<div class="tabpanel" data-tab="sok" hidden>{search}</div>'
 
     justering = ('<section><h2>Justering</h2>'
                  '<p class="muted">Gå igenom inläggen ett i taget och rätta taggar som blivit fel. '
@@ -1509,7 +1515,7 @@ def main():
                  '<input id="fsearch" type="search" autocomplete="off" placeholder="Sök i beskrivning"></div>'
                  '<div id="flow"></div></section>')
 
-    justering_panel = f'<div class="tabpanel" data-tab="justering" hidden>{justering}{search}</div>'
+    justering_panel = f'<div class="tabpanel" data-tab="justering" hidden>{justering}</div>'
 
     editor = ('<div id="editor" class="modal" hidden><div class="sheet">'
               '<div class="mh"><b>Ändra taggar</b>'
@@ -1543,7 +1549,7 @@ def main():
            f'<style>{css}</style>'
            f'</head><body><div class="wrap"><div class="layout">'
            f'<aside class="sidebar">{header}</aside>'
-           f'<main class="main">{seg}{tabs}{insikter_panel}{topp_panel}{justering_panel}</main>'
+           f'<main class="main">{seg}{tabs}{insikter_panel}{topp_panel}{sok_panel}{justering_panel}</main>'
            f'</div></div>{editor}{lightbox}{ovbar}'
            f'<script>window.POSTS={data_js};window.HAS_TONE={str(has_tone).lower()};'
            f'window.HAS_OCCASION={str(has_occasion).lower()};'
