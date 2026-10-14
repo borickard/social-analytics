@@ -10,7 +10,8 @@
 //
 // Sätt miljövariabeln SITE_PASSWORD i Vercel (och ev. SITE_USER, default "iq").
 // Utan SITE_PASSWORD är sajten öppen – så glöm inte att sätta den.
-export const config = { matcher: '/((?!favicon.ico).*)' };
+// robots.txt lämnas utanför lösenordsskyddet så sökmotorer kan läsa "Disallow: /".
+export const config = { matcher: '/((?!favicon.ico|robots.txt).*)' };
 
 const COOKIE = 'iq_auth';
 const REMEMBER_MAXAGE = 60 * 60 * 24 * 30; // 30 dagar
@@ -29,6 +30,7 @@ function loginPage(user, msg) {
     : '<p class="sub">Ange lösenordet för att se analysen.</p>';
   return `<!doctype html><html lang="sv"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex, nofollow, noarchive, nosnippet">
 <title>IQ TikTok – logga in</title><style>
   :root{color-scheme:light}
   *{box-sizing:border-box}
@@ -118,7 +120,7 @@ export default async function middleware(request) {
     }
     return new Response(loginPage(esc(u) || user, 'Fel användarnamn eller lösenord.'), {
       status: 401,
-      headers: { 'content-type': 'text/html; charset=utf-8' },
+      headers: { 'content-type': 'text/html; charset=utf-8', 'X-Robots-Tag': 'noindex, nofollow' },
     });
   }
 
@@ -127,6 +129,6 @@ export default async function middleware(request) {
   // Alla andra obehöriga förfrågningar → visa inloggningssidan (ingen popup).
   return new Response(loginPage(user, ''), {
     status: 200,
-    headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' },
+    headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store', 'X-Robots-Tag': 'noindex, nofollow' },
   });
 }

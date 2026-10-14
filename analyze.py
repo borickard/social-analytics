@@ -1534,6 +1534,7 @@ def main():
 
     doc = (f'<!doctype html><html lang="sv"><head><meta charset="utf-8">'
            f'<meta name="viewport" content="width=device-width,initial-scale=1">'
+           f'<meta name="robots" content="noindex, nofollow, noarchive, nosnippet">'
            f'<title>IQ × TikTok Dashboard</title>'
            f'<link rel="preconnect" href="https://fonts.googleapis.com">'
            f'<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>'
