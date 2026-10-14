@@ -703,7 +703,7 @@ function applyBulk(){
     if(v!==(p[bulkField]||'')){OV[id]=OV[id]||{};OV[id][bulkField]=v;changes.push({id,field:bulkField,value:v});n++;}});
   saveLS();applyOv();pushDeltas(changes);
   SEL.clear();updateOvBar();renderAll();updateBulkBar();
-  const s=document.getElementById('ovstatus');if(s&&!AUTOSAVE)s.textContent=`${n} inlägg ändrade – ladda ner för att spara`;
+  if(!AUTOSAVE&&n)toast(`${n} inlägg ändrade – ladda ner för att spara`);
 }
 function clearSel(){SEL.clear();reflectSel();updateBulkBar();}
 
@@ -805,11 +805,10 @@ const OV_ENDPOINT='/api/overrides';
 // blobben. Då kan två personer spara samtidigt utan att skriva över varandra.
 function pushDeltas(changes,quiet){
   if(!AUTOSAVE||!changes||!changes.length)return;
-  const s=quiet?null:document.getElementById('ovstatus');
   fetch(OV_ENDPOINT,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({deltas:changes})})
     .then(r=>r.ok?r.json():Promise.reject())
-    .then(()=>{if(s)s.textContent='sparat ✓ (synkat till alla)';})
-    .catch(()=>{if(s)s.textContent='kunde inte spara automatiskt – ladda ner i stället';});}
+    .then(()=>{if(!quiet)toast('sparat ✓ – synkat till alla');})
+    .catch(()=>{if(!quiet)toast('kunde inte spara – kontrollera anslutningen');});}
 function exportCsv(){let rows=[['video_id','field','value']];
   for(const v in OV)for(const f in OV[v])rows.push([v,f,OV[v][f]]);
   const csv=rows.map(r=>r.map(c=>'"'+String(c).replace(/"/g,'""')+'"').join(',')).join('\n');
@@ -817,12 +816,17 @@ function exportCsv(){let rows=[['video_id','field','value']];
   a.href=url;a.download='overrides.csv';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
 function clearLocal(){if(!confirm('Rensa lokala (osparade) ändringar? Redan sparade i overrides.csv finns kvar efter att du kört analyze.py igen.'))return;
   try{localStorage.removeItem(LS_KEY);}catch(e){}location.reload();}
+// Liten självslocknande notis (i stället för en permanent bar) – ändringar
+// sparas ändå automatiskt till den delade databasen.
+function toast(msg){const t=document.getElementById('toast');if(!t)return;
+  t.textContent=msg;t.classList.add('show');
+  clearTimeout(t._h);t._h=setTimeout(()=>t.classList.remove('show'),1900);}
 function updateOvBar(){const b=document.getElementById('ovbar');if(!b)return;const n=Object.keys(OV).length;
   if(AUTOSAVE){
-    b.innerHTML=`<span><b>${n}</b> inlägg med justerade taggar</span>`+
-      `<span class="muted" id="ovstatus">ändringar sparas automatiskt &amp; delas</span>`+
-      (n?`<button class="pill" data-act="dl" title="Exportera alla justerade taggar som overrides.csv (att dela eller baka in i bygget)">⬇ Ladda ner taggarna</button>`:'');
+    // I molnet sparas allt automatiskt till databasen – ingen permanent bar.
+    b.hidden=true;b.innerHTML='';
   }else{
+    b.hidden=false;
     b.innerHTML=`<span><b>${n}</b> inlägg med manuella ändringar</span>`+
       `<button class="pill dark" data-act="dl">⬇ Ladda ner overrides.csv</button>`+
       `<button class="pill" data-act="clr">Rensa lokala</button>`+
@@ -1423,6 +1427,12 @@ def main():
       .ovbar select{padding:6px 9px;border:1px solid var(--line);border-radius:9px;
         background:var(--card);font:inherit;font-size:13px;color:var(--ink);cursor:pointer}
       .ovbar .sep{color:var(--line)}
+      /* liten självslocknande spar-notis */
+      .toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%) translateY(8px);
+        background:var(--iq-navy);color:#fff;padding:10px 18px;border-radius:999px;
+        font-size:13px;font-weight:600;letter-spacing:.01em;box-shadow:0 12px 30px rgba(0,0,0,.25);
+        opacity:0;pointer-events:none;transition:opacity .2s,transform .2s;z-index:50}
+      .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
     """
     def stat(v, l, ac=""):
         cls = "c" + (" " + ac if ac else "")
@@ -1516,7 +1526,8 @@ def main():
                 '<a class="lb-open" id="lbOpen" target="_blank" rel="noopener">Öppna på TikTok ↗</a>'
                 '</div></div>')
     ovbar = ('<div class="ovbar" id="bulkbar" hidden></div>'
-             '<div class="ovbar" id="ovbar"></div>')
+             '<div class="ovbar" id="ovbar" hidden></div>'
+             '<div class="toast" id="toast"></div>')
 
     ov_js = json.dumps(ov, ensure_ascii=False).replace("</", "<\\/")
     edit_js = json.dumps(EDITABLE, ensure_ascii=False).replace("</", "<\\/")
