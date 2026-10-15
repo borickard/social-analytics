@@ -74,6 +74,10 @@ def days_since(d):
 
 def check_one(url):
     """Returnerar 'live' eller 'gone', eller kastar vid tillfälligt fel."""
+    # TikToks oEmbed vill ha /video/<id>-formen för ALLA inlägg – även foto-/
+    # karusellinlägg. Skickar man deras riktiga /photo/-URL svarar oEmbed 400
+    # fastän inlägget lever. Normalisera därför till /video/ före anropet.
+    url = url.replace("/photo/", "/video/")
     api = "https://www.tiktok.com/oembed?url=" + urllib.parse.quote(url, safe="")
     req = urllib.request.Request(api, headers={"User-Agent": UA,
                                                "Accept": "application/json"})
