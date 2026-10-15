@@ -846,6 +846,17 @@ function lbUnavailable(p){
     '<p>Den har tagits bort eller gjorts privat på TikTok. Siffrorna och '+
     'miniatyren finns kvar i dashboarden.</p></div></div>';
 }
+// Försök slå på ljudet i spelaren (webbläsare startar autoplay ljudlöst; vi
+// skickar unMute direkt efter att användaren själv öppnat rutan, vilket oftast
+// släpps igenom). Flera format/försök eftersom spelarens API inte är dokumenterat.
+function lbUnmute(){
+  const f=document.querySelector('#lbFrame iframe');if(!f||!f.contentWindow)return;
+  const w=f.contentWindow;
+  ['unMute','unmute'].forEach(t=>{
+    try{w.postMessage(JSON.stringify({type:t,'x-tiktok-player':true}),'*');}catch(e){}
+    try{w.postMessage({type:t,'x-tiktok-player':true},'*');}catch(e){}
+  });
+}
 function openVideo(id,url){
   if(!id)return;
   const p=BY_ID[id];_lbId=id;
@@ -853,11 +864,23 @@ function openVideo(id,url){
   if(p&&p.gone){
     lbUnavailable(p);                                 // känd borttagen → ingen iframe
   }else{
+    // volume_control=1 så ljudknappen syns; ljudet slås på via lbUnmute nedan.
     const src='https://www.tiktok.com/player/v1/'+encodeURIComponent(id)+
-      '?autoplay=1&loop=1&rel=0&music_info=0&description=0&native_context_menu=0';
+      '?autoplay=1&loop=1&rel=0&music_info=0&description=0&native_context_menu=0&volume_control=1';
     document.getElementById('lbFrame').innerHTML=
       '<iframe src="'+src+'" allow="autoplay; fullscreen; encrypted-media; picture-in-picture" '+
       'allowfullscreen scrolling="no" frameborder="0"></iframe>';
+    [500,1200,2200].forEach(ms=>setTimeout(lbUnmute,ms));   // några försök att slå på ljudet
+  }
+  // Redigeringspanel: tagga medan videon spelar. Ändringar sparas direkt
+  // (samma flowsel-fält som justeringsflödet).
+  const ed=document.getElementById('lbEdit');
+  if(ed){
+    if(p){
+      ed.innerHTML='<div class="lb-cap">'+(esc(p.caption)||'<span class="muted">(ingen beskrivning)</span>')+'</div>'+
+        flowFieldsHTML(p);
+      ed.hidden=false;
+    }else{ed.innerHTML='';ed.hidden=true;}
   }
   document.getElementById('lightbox').hidden=false;
   document.body.classList.add('noscroll');
@@ -866,6 +889,7 @@ function closeVideo(){
   const lb=document.getElementById('lightbox');if(!lb||lb.hidden)return;
   lb.hidden=true;_lbId=null;
   document.getElementById('lbFrame').innerHTML='';   // stoppar uppspelningen
+  const ed=document.getElementById('lbEdit');if(ed){ed.innerHTML='';ed.hidden=true;}
   document.body.classList.remove('noscroll');
 }
 // Spelaren postar meddelanden till föräldrafönstret. Rapporterar den ett fel
@@ -878,6 +902,7 @@ window.addEventListener('message',e=>{
   let d=e.data;if(typeof d==='string'){try{d=JSON.parse(d);}catch(_){return;}}
   const kind=((d&&(d.type||d.event||d.name))||'')+'';
   if(/error/i.test(kind))lbUnavailable(BY_ID[_lbId]);
+  else if(/ready|play|state/i.test(kind))lbUnmute();   // slå på ljudet när spelaren är igång
 });
 document.addEventListener('click',e=>{
   // Klick på en miniatyr → spela upp i lightbox. Cmd/Ctrl/mittenklick samt
@@ -1250,10 +1275,26 @@ def main():
       .lb{position:fixed;inset:0;z-index:60;display:flex;align-items:center;justify-content:center;padding:24px}
       .lb[hidden]{display:none}
       .lb-backdrop{position:absolute;inset:0;background:rgba(10,12,18,.82);backdrop-filter:blur(3px)}
-      .lb-inner{position:relative;z-index:1;display:flex;flex-direction:column;align-items:center;gap:12px;
-        width:min(92vw,340px)}
-      .lb-frame{width:100%;aspect-ratio:9/16;max-height:78vh;border-radius:16px;overflow:hidden;
+      .lb-inner{position:relative;z-index:1;max-width:min(96vw,680px);max-height:92vh}
+      .lb-stage{display:flex;gap:16px;align-items:stretch;justify-content:center}
+      .lb-left{display:flex;flex-direction:column;align-items:center;gap:12px;flex:0 0 auto}
+      /* redigeringspanel bredvid videon – tagga medan man tittar */
+      .lb-edit{flex:0 0 auto;width:min(84vw,270px);background:var(--panel);color:var(--ink);
+        border-radius:16px;padding:16px 16px 18px;max-height:78vh;overflow:auto;text-align:left;
+        box-shadow:0 30px 80px rgba(0,0,0,.5)}
+      .lb-edit[hidden]{display:none}
+      .lb-edit .lb-cap{font-size:12.5px;color:var(--muted);line-height:1.45;margin:0 0 14px;
+        max-height:5.2em;overflow:auto}
+      .lb-edit .ffield{margin-bottom:11px}
+      .lb-edit .ffield:last-child{margin-bottom:0}
+      .lb-frame{width:min(78vw,320px);aspect-ratio:9/16;max-height:78vh;border-radius:16px;overflow:hidden;
         background:#000;box-shadow:0 30px 80px rgba(0,0,0,.5)}
+      @media(max-width:640px){
+        .lb-stage{flex-direction:column;align-items:center}
+        .lb-inner{max-height:94vh;overflow:auto}
+        .lb-frame{max-height:56vh}
+        .lb-edit{width:min(90vw,340px);max-height:none}
+      }
       .lb-frame iframe{width:100%;height:100%;border:0;display:block}
       .lb-gone{width:100%;height:100%;position:relative;display:flex;align-items:flex-end}
       .lb-gone img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;
@@ -1528,8 +1569,13 @@ def main():
                 '<div class="lb-backdrop"></div>'
                 '<div class="lb-inner">'
                 '<button class="lb-x" id="lbClose" title="Stäng (Esc)">✕</button>'
+                '<div class="lb-stage">'
+                '<div class="lb-left">'
                 '<div class="lb-frame" id="lbFrame"></div>'
                 '<a class="lb-open" id="lbOpen" target="_blank" rel="noopener">Öppna på TikTok ↗</a>'
+                '</div>'
+                '<div class="lb-edit" id="lbEdit" hidden></div>'
+                '</div>'
                 '</div></div>')
     ovbar = ('<div class="ovbar" id="bulkbar" hidden></div>'
              '<div class="ovbar" id="ovbar" hidden></div>'
