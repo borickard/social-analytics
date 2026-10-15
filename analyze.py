@@ -49,7 +49,7 @@ EDITABLE = {
                  "dramatiserat", "övrigt"],
     "format": ["filmat", "animerat", "skärmavbildning", "voiceover",
                "talking head", "sketch", "bildinlägg", "övrigt"],
-    "budskapston": ["", "budskap", "lattsamt", "blandat"],
+    "budskapston": ["", "lattsamt", "blandat", "budskap"],
     "hogtid": ["", "Nyår", "Jul", "Midsommar", "Valborg", "Studenten",
                "Halloween", "Sommarlov", "Födelsedag", "Påsk", "Kräftskiva"],
     "har_hook": ["", "ja", "nej"],
