@@ -598,14 +598,38 @@ function renderOverridden(){
     return `<div class="ovitem">${card(o.p,true)}<div class="ovchg">Ändrat: ${ch}</div></div>`;
   }).join('')+'</div>';
 }
+// Sök-filter: fritextsök + ett filter per taggfält + justerad/ej. __all__ = alla.
+let searchFilters={};   // {fält: värde}  (frånvarande = inget filter)
+let searchAdj='all';    // 'all' | 'adj' | 'unadj'
+function buildSearchFilters(){
+  const host=document.getElementById('searchfilters');if(!host)return;
+  let h='<span class="lbl">Filter</span>'+
+    '<select class="sfilter" data-f="__adj__">'+
+      '<option value="all">Justerade: alla</option>'+
+      '<option value="adj">Bara justerade</option>'+
+      '<option value="unadj">Bara ej justerade</option></select>';
+  for(const f in window.EDITABLE){
+    const opts=['<option value="__all__">'+esc(f)+': alla</option>'].concat(
+      window.EDITABLE[f].map(v=>`<option value="${esc(v)}">${esc(f)}: ${esc(v||'(tom)')}</option>`)).join('');
+    h+=`<select class="sfilter" data-f="${esc(f)}">${opts}</select>`;
+  }
+  host.innerHTML=h;
+}
 function renderSearch(){
   const box=document.getElementById('searchbox');if(!box)return;
   const q=(box.value||'').trim().toLowerCase();
   const info=document.getElementById('searchinfo'),res=document.getElementById('searchres');
-  if(!q){info.textContent='';res.innerHTML='';return;}
-  if(q.length<2){info.textContent='Skriv minst två tecken.';res.innerHTML='';return;}
-  const hits=timePosts().filter(p=>(p.sok||'').includes(q));
-  info.innerHTML=`<b>${hits.length}</b> inlägg innehåller ”${esc(q)}” i beskrivningen.`;
+  const fkeys=Object.keys(searchFilters);
+  const hasFilter=fkeys.length>0||searchAdj!=='all';
+  if(!q&&!hasFilter){info.innerHTML='<span class="muted">Skriv ett nyckelord eller välj ett filter.</span>';res.innerHTML='';return;}
+  if(q&&q.length<2&&!hasFilter){info.textContent='Skriv minst två tecken.';res.innerHTML='';return;}
+  let hits=timePosts();
+  if(q.length>=2)hits=hits.filter(p=>(p.sok||'').includes(q));
+  fkeys.forEach(f=>{const v=searchFilters[f];hits=hits.filter(p=>(p[f]||'')===v);});
+  if(searchAdj==='adj')hits=hits.filter(p=>OV[p.id]);
+  else if(searchAdj==='unadj')hits=hits.filter(p=>!OV[p.id]);
+  const how=q.length>=2?` som matchar ”${esc(q)}”`:'';
+  info.innerHTML=`<b>${hits.length}</b> inlägg${how}${hasFilter?' med valda filter':''}.`;
   if(!hits.length){res.innerHTML='';return;}
   const ids=hits.map(p=>p.id),allsel=ids.every(id=>SEL.has(id));
   const sall=`<div class="selall"><label><input type="checkbox" class="selallbox" `+
@@ -800,6 +824,7 @@ function showTab(name){
   try{localStorage.setItem('iq_tab',name);}catch(e){}
   if(name==='justering')renderFlow();
   if(name==='sok'){const sb=document.getElementById('searchbox');if(sb)setTimeout(()=>sb.focus(),30);}
+  if(typeof syncURL==='function')syncURL();
   requestAnimationFrame(refreshMore);}
 const OV_ENDPOINT='/api/overrides';
 // Spara bara de ÄNDRADE fälten (deltas) till den delade databasen – aldrig hela
@@ -957,6 +982,11 @@ document.addEventListener('change',e=>{
   if(e.target.id==='bulkValue'){bulkVal=e.target.value;bulkManual=true;return;}
   const fsel=e.target.closest('.flowsel');
   if(fsel){flowSet(fsel.dataset.id,fsel.dataset.f,fsel.value);return;}
+  const sf=e.target.closest('.sfilter');
+  if(sf){const f=sf.dataset.f,v=sf.value;
+    if(f==='__adj__')searchAdj=v;
+    else if(v==='__all__')delete searchFilters[f]; else searchFilters[f]=v;
+    renderSearch();syncURL();return;}
   if(e.target.id==='ffield'){flowField=e.target.value;flowVal='';updateFlowValFilter();flowIdx=0;renderFlow();return;}
   if(e.target.id==='fval'){flowVal=e.target.value;flowIdx=0;renderFlow();return;}
   if(e.target.id==='fhide'){flowHide=e.target.checked;flowIdx=0;renderFlow();return;}
@@ -964,9 +994,9 @@ document.addEventListener('change',e=>{
 document.querySelectorAll('.pill[data-seg]').forEach(b=>b.addEventListener('click',e=>{
   segment=e.currentTarget.dataset.seg;
   document.querySelectorAll('.pill[data-seg]').forEach(x=>x.classList.toggle('active',x===e.currentTarget));
-  renderAll();}));
+  renderAll();syncURL();}));
 const _sb=document.getElementById('searchbox');
-if(_sb)_sb.addEventListener('input',renderSearch);
+if(_sb)_sb.addEventListener('input',()=>{renderSearch();syncURL();});
 // Chart-tooltip (snabb, egen – visar ER + antal inlägg för kvartalet).
 (function(){const chart=document.getElementById('chart');if(!chart)return;
   chart.addEventListener('mouseover',e=>{const c=e.target.closest('.cdot');if(!c)return;
@@ -987,7 +1017,7 @@ function setPeriod(from,to){periodFrom=from||null;periodTo=to||null;
   document.querySelectorAll('.pill[data-period]').forEach(b=>{
     const act=(b.dataset.period==='all'&&!periodFrom&&!periodTo);
     b.classList.toggle('active',act);});
-  renderAll();}
+  renderAll();if(typeof syncURL==='function')syncURL();}
 (function(){const pf=document.getElementById('pfrom'),pt=document.getElementById('pto');
   if(pf){pf.min=pt.min=DMIN;pf.max=pt.max=DMAX;
     pf.addEventListener('change',()=>setPeriod(pf.value,pt.value));
@@ -1007,18 +1037,57 @@ function setCols(n){n=Math.min(5,Math.max(1,n|0))||3;
 let _initCols=3;try{_initCols=+localStorage.getItem('iq_cols')||3;}catch(e){}
 setCols(_initCols);
 
+// Spara vyns tillstånd i URL:en (flik, segment, period, sök, filter) så att en
+// omladdning eller delad länk återställer exakt samma vy.
+let _restoring=false;
+function activeTab(){const b=document.querySelector('.tab.active');return b?b.dataset.tab:'insikter';}
+function syncURL(){
+  if(_restoring)return;
+  const q=new URLSearchParams();
+  const tab=activeTab();if(tab&&tab!=='insikter')q.set('tab',tab);
+  if(segment!=='boost')q.set('seg',segment);
+  if(periodFrom)q.set('from',periodFrom);
+  if(periodTo)q.set('to',periodTo);
+  const sb=document.getElementById('searchbox'),sv=sb&&sb.value.trim();
+  if(sv)q.set('q',sv);
+  if(searchAdj!=='all')q.set('adj',searchAdj);
+  for(const f in searchFilters)q.set('f_'+f,searchFilters[f]);
+  const s=q.toString();
+  try{history.replaceState(null,'',s?('?'+s):location.pathname);}catch(e){}
+}
+function restoreURL(){
+  const q=new URLSearchParams(location.search);
+  const seg=q.get('seg');
+  if(seg==='org'||seg==='boost'||seg==='alla'){segment=seg;
+    document.querySelectorAll('.pill[data-seg]').forEach(x=>x.classList.toggle('active',x.dataset.seg===seg));}
+  searchAdj=q.get('adj')||'all';
+  searchFilters={};
+  for(const [k,v] of q){if(k.indexOf('f_')===0)searchFilters[k.slice(2)]=v;}
+  const sb=document.getElementById('searchbox'),qq=q.get('q');if(sb&&qq)sb.value=qq;
+  document.querySelectorAll('.sfilter').forEach(sel=>{const f=sel.dataset.f;
+    sel.value=(f==='__adj__')?searchAdj:((f in searchFilters)?searchFilters[f]:'__all__');});
+  const from=q.get('from'),to=q.get('to');
+  if(from||to)setPeriod(from||'',to||'');
+  return q.get('tab');
+}
+
 // Bygg dimensions-sektionerna och rendera.
 const host=document.getElementById('dims');
 DIMS.forEach(d=>{host.insertAdjacentHTML('beforeend',
   `<section><h2>${d.label}</h2><div id="dim-${d.id}"></div></section>`);});
+buildSearchFilters();
 updateOvBar();
+_restoring=true;
+const _urlTab=restoreURL();
+_restoring=false;
 renderAll();
 // Flikar + justeringsflöde.
 populateFlowFilters();
 const _fsearch=document.getElementById('fsearch');
 if(_fsearch)_fsearch.addEventListener('input',()=>{flowQuery=_fsearch.value;flowIdx=0;renderFlow();});
-let _initTab='insikter';try{_initTab=localStorage.getItem('iq_tab')||'insikter';}catch(e){}
+let _initTab=_urlTab||'insikter';try{if(!_urlTab)_initTab=localStorage.getItem('iq_tab')||'insikter';}catch(e){}
 showTab(_initTab);
+syncURL();
 // När sajten serveras (serve.py lokalt eller Vercel): håll sidan i synk med den
 // delade databasen. Hämtas vid start och sedan med jämna mellanrum, så en
 // ändring som någon annan gör dyker upp automatiskt – utan att man laddar om.
@@ -1442,6 +1511,11 @@ def main():
       #searchbox{width:100%;max-width:520px;padding:11px 14px;border:1px solid var(--line);
         border-radius:12px;background:var(--panel);font:inherit;font-size:15px;color:var(--ink)}
       #searchbox:focus{outline:none;border-color:var(--iq-blue)}
+      .searchbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:12px 0 2px}
+      .searchbar .lbl{font-size:11px;text-transform:uppercase;letter-spacing:.09em;color:var(--muted);font-weight:700}
+      .searchbar select{padding:7px 10px;border:1px solid var(--line);border-radius:9px;
+        background:var(--card);font:inherit;font-size:13px;color:var(--ink);cursor:pointer}
+      .searchbar select:focus{outline:none;border-color:var(--iq-blue)}
       #searchinfo{font-size:13px;color:var(--muted);margin:10px 0 2px}
       /* redigering av taggar: redigeraren (modal) */
       .modal{position:fixed;inset:0;background:#00000066;display:flex;
@@ -1532,11 +1606,13 @@ def main():
                   f'stabilare siffror); för delningar, kommentarer m.m. visas flest. '
                   f'Klicka för att öppna på TikTok.</p><div id="rank"></div></section></div>')
 
-    search = ('<section><h2>Sök i beskrivningar</h2>'
-              '<p class="muted">Skriv ett nyckelord – listar alla inlägg vars beskrivning '
-              'innehåller det (följer segment- och periodvalet).</p>'
+    search = ('<section><h2>Sök &amp; filtrera</h2>'
+              '<p class="muted">Sök på nyckelord och/eller filtrera på taggar – listar '
+              'alla inlägg som matchar (följer segment- och periodvalet). Valen sparas '
+              'i länken, så du kan ladda om eller dela utan att börja om.</p>'
               '<input id="searchbox" type="search" autocomplete="off" '
-              'placeholder="t.ex. valborg, promille, tips …">'
+              'placeholder="t.ex. valborg, promille, tips … (valfritt)">'
+              '<div class="searchbar" id="searchfilters"></div>'
               '<div id="searchinfo" class="muted"></div>'
               '<div id="searchres"></div></section>')
 
