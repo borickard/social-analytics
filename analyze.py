@@ -874,6 +874,10 @@ function updateOvBar(){const b=document.getElementById('ovbar');if(!b)return;con
 // inbäddade spelare. Inget API-nyckel behövs – spelaren laddas i en iframe
 // i tittarens egen webbläsare. Öppna-på-TikTok finns alltid som reserv.
 let _lbId=null;   // vilken video som visas i lightboxen just nu
+// Granskningsläge i lightboxen: en navigeringslista (lbNav) att bläddra i, och
+// ändringar som INTE sparas förrän man väljer "Granskad" (lbPending).
+let lbNav=[], lbIdx=0, lbPending={};
+function lbHasPending(){return Object.keys(lbPending).length>0;}
 function lbUnavailable(p){
   const thumb=(p&&p.thumb)?'<img src="'+esc(p.thumb)+'" alt="">':'';
   document.getElementById('lbFrame').innerHTML=
@@ -893,9 +897,37 @@ function lbUnmute(){
     try{w.postMessage({type:t,'x-tiktok-player':true},'*');}catch(e){}
   });
 }
-function openVideo(id,url){
+// Rita redigeringspanelen (fält + navigering). Fälten speglar ev. osparade
+// ändringar (lbPending) ovanpå inläggets nuvarande värden.
+function lbRenderEdit(p){
+  const ed=document.getElementById('lbEdit');if(!ed)return;
+  if(!p){ed.innerHTML='';ed.hidden=true;return;}
+  const many=lbNav.length>1;
+  const pos=many?`<div class="lb-pos">Inlägg <b>${lbIdx+1}</b> av <b>${lbNav.length}</b>`+
+    (reviewed.has(p.id)?' · <span class="flowbadge rev">granskad ✓</span>':'')+'</div>':'';
+  const fields=Object.keys(window.EDITABLE).map(f=>{
+    const cur=(f in lbPending)?lbPending[f]:(p[f]||'');
+    const opts=window.EDITABLE[f].map(v=>`<option value="${esc(v)}"${v===cur?' selected':''}>${esc(v||'(tom)')}</option>`).join('');
+    const hint=f==='har_hook'?` <span class="fhint" title="${esc(HOOK_HINT)}">?</span>`:'';
+    return `<div class="ffield${(f in lbPending)?' changed':''}"><label>${esc(f)}${hint}</label>`+
+      `<select class="lbsel" data-f="${esc(f)}">${opts}</select></div>`;
+  }).join('');
+  const actions=many?
+    `<button class="pill" data-lb="prev"${lbIdx<=0?' disabled':''}>← Föreg.</button>`+
+    `<button class="pill" data-lb="skip">Hoppa över →</button>`+
+    `<button class="pill dark" data-lb="done">Granskad ✓ → nästa</button>`:
+    `<button class="pill dark" data-lb="save"${lbHasPending()?'':' disabled'}>Spara ändringar</button>`;
+  ed.innerHTML=pos+
+    '<div class="lb-cap">'+(esc(p.caption)||'<span class="muted">(ingen beskrivning)</span>')+'</div>'+
+    fields+'<div class="lb-actions">'+actions+'</div>';
+  ed.hidden=false;
+}
+function openVideo(id,url,navList){
   if(!id)return;
   const p=BY_ID[id];_lbId=id;
+  if(navList&&navList.length){lbNav=navList.slice();lbIdx=Math.max(0,lbNav.indexOf(id));}
+  else if(!lbNav.length){lbNav=[id];lbIdx=0;}
+  lbPending={};                                       // färska, osparade ändringar per inlägg
   const op=document.getElementById('lbOpen');if(op)op.href=url||(p&&p.url)||'#';
   if(p&&p.gone){
     lbUnavailable(p);                                 // känd borttagen → ingen iframe
@@ -908,22 +940,39 @@ function openVideo(id,url){
       'allowfullscreen scrolling="no" frameborder="0"></iframe>';
     [500,1200,2200].forEach(ms=>setTimeout(lbUnmute,ms));   // några försök att slå på ljudet
   }
-  // Redigeringspanel: tagga medan videon spelar. Ändringar sparas direkt
-  // (samma flowsel-fält som justeringsflödet).
-  const ed=document.getElementById('lbEdit');
-  if(ed){
-    if(p){
-      ed.innerHTML='<div class="lb-cap">'+(esc(p.caption)||'<span class="muted">(ingen beskrivning)</span>')+'</div>'+
-        flowFieldsHTML(p);
-      ed.hidden=false;
-    }else{ed.innerHTML='';ed.hidden=true;}
-  }
+  lbRenderEdit(p);
   document.getElementById('lightbox').hidden=false;
   document.body.classList.add('noscroll');
 }
+// Byt inlägg i navigeringslistan (eller stäng efter det sista).
+function lbGo(delta){
+  const ni=lbIdx+delta;
+  if(ni<0)return;
+  if(ni>=lbNav.length){lbPending={};closeVideo();return;}
+  lbIdx=ni;lbPending={};openVideo(lbNav[lbIdx],null,lbNav);
+}
+// Spara ev. osparade ändringar för aktuellt inlägg till den delade databasen.
+function lbCommit(id){
+  const changes=Object.keys(lbPending).map(f=>({id,field:f,value:lbPending[f]}));
+  if(!changes.length)return;
+  changes.forEach(c=>{OV[id]=OV[id]||{};OV[id][c.field]=c.value;});
+  saveLS();applyOv();pushDeltas(changes);updateOvBar();renderAll();
+}
+function lbAct(act){
+  const id=lbNav[lbIdx]||_lbId;if(!id)return;
+  if(act==='done'){lbCommit(id);reviewed.add(id);saveRev();lbPending={};lbGo(1);return;}
+  if(act==='skip'){
+    if(lbHasPending()&&!confirm('Du har ändringar som inte sparats. Hoppa över utan att spara?'))return;
+    lbPending={};lbGo(1);return;}
+  if(act==='prev'){
+    if(lbHasPending()&&!confirm('Du har ändringar som inte sparats. Gå tillbaka utan att spara?'))return;
+    lbPending={};lbGo(-1);return;}
+  if(act==='save'){lbCommit(id);lbPending={};toast('sparat ✓ – synkat till alla');lbRenderEdit(BY_ID[id]);return;}
+}
 function closeVideo(){
   const lb=document.getElementById('lightbox');if(!lb||lb.hidden)return;
-  lb.hidden=true;_lbId=null;
+  if(lbHasPending()&&!confirm('Du har ändringar som inte sparats. Stäng utan att spara?'))return;
+  lb.hidden=true;_lbId=null;lbPending={};lbNav=[];lbIdx=0;
   document.getElementById('lbFrame').innerHTML='';   // stoppar uppspelningen
   const ed=document.getElementById('lbEdit');if(ed){ed.innerHTML='';ed.hidden=true;}
   document.body.classList.remove('noscroll');
@@ -951,7 +1000,16 @@ document.addEventListener('click',e=>{
   // högerklick lämnas till webbläsaren så att man kan öppna på TikTok i ny flik.
   const pv=e.target.closest('[data-play]');
   if(pv&&e.button===0&&!e.metaKey&&!e.ctrlKey&&!e.shiftKey&&!e.altKey){
-    e.preventDefault();openVideo(pv.dataset.play,pv.getAttribute('href'));return;}
+    e.preventDefault();
+    // Navigeringslista = kön man klickade ur (justeringsflödet) eller de
+    // spelbara korten i samma lista (sök/topplista), så man kan bläddra vidare.
+    let nav;
+    if(pv.closest('#flow'))nav=flowList.slice();
+    else{const scope=pv.closest('.cards')||pv.closest('.ranklist');
+      nav=scope?[...scope.querySelectorAll('[data-play]')].map(a=>a.dataset.play):[pv.dataset.play];}
+    openVideo(pv.dataset.play,pv.getAttribute('href'),nav);return;}
+  const lbb=e.target.closest('[data-lb]');
+  if(lbb){lbAct(lbb.dataset.lb);return;}
   if(e.target.closest('#lbClose')||e.target.id==='lightbox'||e.target.classList.contains('lb-backdrop')){
     closeVideo();return;}
   const eb=e.target.closest('.editbtn');
@@ -999,6 +1057,12 @@ document.addEventListener('change',e=>{
   if(e.target.id==='bulkValue'){bulkVal=e.target.value;bulkManual=true;return;}
   const fsel=e.target.closest('.flowsel');
   if(fsel){flowSet(fsel.dataset.id,fsel.dataset.f,fsel.value);return;}
+  const lbs=e.target.closest('.lbsel');          // lightbox: ändring hålls kvar (osparad)
+  if(lbs){const f=lbs.dataset.f,v=lbs.value,p=BY_ID[_lbId];
+    if(p&&v===(p[f]||''))delete lbPending[f]; else lbPending[f]=v;
+    const ff=lbs.closest('.ffield');if(ff)ff.classList.toggle('changed',f in lbPending);
+    const sb=document.querySelector('#lbEdit [data-lb="save"]');if(sb)sb.disabled=!lbHasPending();
+    return;}
   const sf=e.target.closest('.sfilter');
   if(sf){const f=sf.dataset.f,v=sf.value;
     if(f==='__adj__')searchAdj=v;
@@ -1372,7 +1436,14 @@ def main():
       .lb-edit .lb-cap{font-size:12.5px;color:var(--muted);line-height:1.45;margin:0 0 14px;
         max-height:5.2em;overflow:auto}
       .lb-edit .ffield{margin-bottom:11px}
-      .lb-edit .ffield:last-child{margin-bottom:0}
+      .lb-pos{font-size:12px;color:var(--muted);font-weight:700;margin:0 0 12px}
+      .lb-pos b{color:var(--ink)}
+      /* ändrat men osparat fält markeras tills man väljer Granskad/Spara */
+      .lb-edit .ffield.changed label{color:var(--iq-blue)}
+      .lb-edit .ffield.changed select{border-color:var(--iq-blue);background:#1359c50d}
+      .lb-actions{display:flex;flex-wrap:wrap;gap:7px;margin-top:16px}
+      .lb-actions .pill{flex:1 1 auto;justify-content:center;text-align:center;padding:9px 10px;font-size:12.5px}
+      .lb-actions .pill.dark{flex-basis:100%}
       .lb-frame{width:min(78vw,320px);aspect-ratio:9/16;max-height:78vh;border-radius:16px;overflow:hidden;
         background:#000;box-shadow:0 30px 80px rgba(0,0,0,.5)}
       @media(max-width:640px){
