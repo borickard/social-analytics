@@ -390,7 +390,8 @@ function card(p,compact){
   const cap=`<div class="pcc">${esc(p.caption)||'<span class="muted">(ingen beskrivning)</span>'}</div>`+
     `<button class="morebtn" data-id="${esc(p.id)}" hidden>${exp?'visa mindre':'läs mer'}</button>`;
   const foot=`<div class="foot"><div class="metaw"><span class="l1">${esc(p.typ)} · ${esc(p.kategori)}</span>`+
-    `<span class="l2">${esc(p.date)} · ${seg}</span></div>`+
+    `<span class="l2">${esc(p.date)} · ${seg}</span>`+
+    `<span class="l3 pid" data-id="${esc(p.id)}" title="Klicka för att kopiera video-id">id ${esc(p.id)}</span></div>`+
     `<button class="editbtn" data-id="${esc(p.id)}" title="Ändra taggar">✎ ändra</button></div>`;
   if(compact){
     return `<div class="pc compact${sel?' sel':''}${exp?' expanded':''}">${check}`+
@@ -624,7 +625,7 @@ function renderSearch(){
   if(!q&&!hasFilter){info.innerHTML='<span class="muted">Skriv ett nyckelord eller välj ett filter.</span>';res.innerHTML='';return;}
   if(q&&q.length<2&&!hasFilter){info.textContent='Skriv minst två tecken.';res.innerHTML='';return;}
   let hits=timePosts();
-  if(q.length>=2)hits=hits.filter(p=>(p.sok||'').includes(q));
+  if(q.length>=2)hits=hits.filter(p=>(p.sok||'').includes(q)||p.id.indexOf(q)>=0);
   fkeys.forEach(f=>{const v=searchFilters[f];hits=hits.filter(p=>(p[f]||'')===v);});
   if(searchAdj==='adj')hits=hits.filter(p=>OV[p.id]);
   else if(searchAdj==='unadj')hits=hits.filter(p=>!OV[p.id]);
@@ -752,6 +753,9 @@ function loadRev(){try{return new Set(JSON.parse(localStorage.getItem(REV_KEY)||
 let reviewed=loadRev();
 function saveRev(){try{localStorage.setItem(REV_KEY,JSON.stringify([...reviewed]));}catch(e){}}
 let flowStatus='all', flowField='', flowVal='', flowQuery='', flowHide=false, flowList=[], flowIdx=0;
+// Inlägget man jobbar med just nu "nålas fast" så det inte filtreras bort mitt
+// i en redigering (t.ex. när "Ej justerade" eller "dölj granskade" är på).
+let flowFocusId=null;
 const HOOK_HINT='Hook (vår definition): en direkt fråga i början ("Har du testat att…?"), eller något som sticker ut och får en att reagera – ibland ett kort klipp från längre fram i videon som lyfts först för att man ska vilja se mer.';
 function buildFlowList(){
   let ps=POSTS.slice();
@@ -759,11 +763,14 @@ function buildFlowList(){
   else if(flowStatus==='unadj')ps=ps.filter(p=>!OV[p.id]);
   if(flowField&&flowVal!=='')ps=ps.filter(p=>(p[flowField]||'')===flowVal);
   const q=flowQuery.trim().toLowerCase();
-  if(q)ps=ps.filter(p=>(p.sok||'').includes(q));
+  if(q)ps=ps.filter(p=>(p.sok||'').includes(q)||p.id.indexOf(q)>=0);
   if(flowHide)ps=ps.filter(p=>!reviewed.has(p.id));
+  // Behåll det fastnålade inlägget även om det inte längre matchar filtret.
+  if(flowFocusId&&BY_ID[flowFocusId]&&!ps.some(p=>p.id===flowFocusId))ps.push(BY_ID[flowFocusId]);
   ps.sort((a,b)=>(b.date||'').localeCompare(a.date||''));
   flowList=ps.map(p=>p.id);
-  if(flowIdx>=flowList.length)flowIdx=Math.max(0,flowList.length-1);
+  const fi=flowFocusId?flowList.indexOf(flowFocusId):-1;
+  if(fi>=0)flowIdx=fi; else if(flowIdx>=flowList.length)flowIdx=Math.max(0,flowList.length-1);
 }
 function flowFieldsHTML(p){
   return Object.keys(window.EDITABLE).map(f=>{const cur=p[f]||'';
@@ -775,8 +782,10 @@ function flowFieldsHTML(p){
 function renderFlow(){
   const host=document.getElementById('flow');if(!host)return;
   buildFlowList();const total=flowList.length;
-  if(!total){host.innerHTML='<p class="muted" style="padding:16px 0">Inga inlägg matchar filtret. 🎉</p>';return;}
-  const p=POSTS.find(x=>x.id===flowList[flowIdx]);if(!p){host.innerHTML='';return;}
+  if(!total){host.innerHTML='<p class="muted" style="padding:16px 0">Inga inlägg matchar filtret. 🎉</p>';flowFocusId=null;return;}
+  if(flowIdx>=total)flowIdx=total-1;
+  flowFocusId=flowList[flowIdx];        // det som visas nu är i fokus (nålas fast)
+  const p=POSTS.find(x=>x.id===flowFocusId);if(!p){host.innerHTML='';return;}
   const adj=OV[p.id],rev=reviewed.has(p.id),seg=p.organic?'organiskt':'boostat',bench=benchText(p);
   host.innerHTML=
     `<div class="flowhead"><span>Inlägg <b>${flowIdx+1}</b> av <b>${total}</b></span>`+
@@ -789,7 +798,8 @@ function renderFlow(){
         `<span class="er"><b>${fmtPct(p.er)}</b></span>`+(bench?`<span class="bench ${bench.c}">${bench.t}</span>`:'')+`</a>`+
       `<div class="flowbody">`+
         `<div class="flowmeta">${esc(p.typ)} · ${esc(p.kategori)} · ${esc(p.date)} · ${seg} · `+
-          `<a href="${esc(p.url)}" target="_blank" rel="noopener">öppna på TikTok ↗</a></div>`+
+          `<a href="${esc(p.url)}" target="_blank" rel="noopener">öppna på TikTok ↗</a> · `+
+          `<span class="pid" data-id="${esc(p.id)}" title="Klicka för att kopiera video-id">id ${esc(p.id)}</span></div>`+
         `<div class="flowmetrics metrics">${metricsHTML(p)}</div>`+
         `<div class="flowcap">${esc(p.caption)||'<span class="muted">(ingen beskrivning)</span>'}</div>`+
         `<div class="flowfields">${flowFieldsHTML(p)}</div>`+
@@ -805,6 +815,7 @@ function flowSet(id,field,value){const p=POSTS.find(x=>x.id===id);if(!p||value==
   updateOvBar();renderAll();renderFlow();}
 function flowAct(act){
   if(!flowList.length)return;const id=flowList[flowIdx];
+  flowFocusId=null;                       // släpp pinnen – nu får posten filtreras bort
   if(act==='prev'){if(flowIdx>0)flowIdx--;renderFlow();return;}
   if(act==='done'&&id){reviewed.add(id);saveRev();
     if(flowHide){renderFlow();return;}}            // rebuild drops den → nästa glider in
@@ -930,6 +941,12 @@ window.addEventListener('message',e=>{
   else if(/ready|play|state/i.test(kind))lbUnmute();   // slå på ljudet när spelaren är igång
 });
 document.addEventListener('click',e=>{
+  // Klick på ett video-id → kopiera det (lätt att hitta tillbaka / söka på).
+  const pid=e.target.closest('.pid');
+  if(pid){const id=pid.dataset.id;
+    const done=()=>toast('id kopierat: '+id);
+    try{navigator.clipboard.writeText(id).then(done,()=>done());}catch(_){done();}
+    return;}
   // Klick på en miniatyr → spela upp i lightbox. Cmd/Ctrl/mittenklick samt
   // högerklick lämnas till webbläsaren så att man kan öppna på TikTok i ny flik.
   const pv=e.target.closest('[data-play]');
@@ -952,7 +969,7 @@ document.addEventListener('click',e=>{
   const tb=e.target.closest('.tab');
   if(tb){showTab(tb.dataset.tab);return;}
   const fst=e.target.closest('.pill[data-fstatus]');
-  if(fst){flowStatus=fst.dataset.fstatus;flowIdx=0;
+  if(fst){flowStatus=fst.dataset.fstatus;flowIdx=0;flowFocusId=null;
     document.querySelectorAll('.pill[data-fstatus]').forEach(x=>x.classList.toggle('active',x===fst));renderFlow();return;}
   const fa=e.target.closest('.pill[data-flow]');
   if(fa){flowAct(fa.dataset.flow);return;}
@@ -987,9 +1004,9 @@ document.addEventListener('change',e=>{
     if(f==='__adj__')searchAdj=v;
     else if(v==='__all__')delete searchFilters[f]; else searchFilters[f]=v;
     renderSearch();syncURL();return;}
-  if(e.target.id==='ffield'){flowField=e.target.value;flowVal='';updateFlowValFilter();flowIdx=0;renderFlow();return;}
-  if(e.target.id==='fval'){flowVal=e.target.value;flowIdx=0;renderFlow();return;}
-  if(e.target.id==='fhide'){flowHide=e.target.checked;flowIdx=0;renderFlow();return;}
+  if(e.target.id==='ffield'){flowField=e.target.value;flowVal='';updateFlowValFilter();flowIdx=0;flowFocusId=null;renderFlow();return;}
+  if(e.target.id==='fval'){flowVal=e.target.value;flowIdx=0;flowFocusId=null;renderFlow();return;}
+  if(e.target.id==='fhide'){flowHide=e.target.checked;flowIdx=0;flowFocusId=null;renderFlow();return;}
 });
 document.querySelectorAll('.pill[data-seg]').forEach(b=>b.addEventListener('click',e=>{
   segment=e.currentTarget.dataset.seg;
@@ -1084,7 +1101,7 @@ renderAll();
 // Flikar + justeringsflöde.
 populateFlowFilters();
 const _fsearch=document.getElementById('fsearch');
-if(_fsearch)_fsearch.addEventListener('input',()=>{flowQuery=_fsearch.value;flowIdx=0;renderFlow();});
+if(_fsearch)_fsearch.addEventListener('input',()=>{flowQuery=_fsearch.value;flowIdx=0;flowFocusId=null;renderFlow();});
 let _initTab=_urlTab||'insikter';try{if(!_urlTab)_initTab=localStorage.getItem('iq_tab')||'insikter';}catch(e){}
 showTab(_initTab);
 syncURL();
@@ -1411,6 +1428,11 @@ def main():
       .metaw{display:flex;flex-direction:column;gap:1px;min-width:0}
       .metaw .l1{font-size:11.5px;color:var(--muted);font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
       .metaw .l2{font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums}
+      .pid{font-size:10.5px;color:var(--taupe);font-family:ui-monospace,Menlo,Consolas,monospace;
+        cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:inline-block;max-width:100%}
+      .metaw .l3{margin-top:1px}
+      .pid:hover{color:var(--iq-blue);text-decoration:underline}
+      .flowmeta .pid{font-size:11.5px}
       .editbtn{flex:0 0 auto;border:1px solid var(--line);background:transparent;color:var(--iq-blue);
         font:inherit;font-size:11.5px;font-weight:700;padding:6px 12px;border-radius:999px;cursor:pointer;white-space:nowrap;margin:0}
       .editbtn:hover{border-color:var(--iq-blue)}
