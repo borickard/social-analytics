@@ -934,11 +934,12 @@ function openVideo(id,url,navList){
   if(p&&p.gone){
     lbUnavailable(p);                                 // känd borttagen → ingen iframe
   }else{
-    // volume_control=1 så ljudknappen syns; ljudet slås på via lbUnmute nedan.
+    // embed_from=oembed KRÄVS – annars svarar spelaren "Player authentication
+    // failed". volume_control=1 visar ljudknappen; ljudet slås på via lbUnmute.
     const src='https://www.tiktok.com/player/v1/'+encodeURIComponent(id)+
-      '?autoplay=1&loop=1&rel=0&music_info=0&description=0&native_context_menu=0&volume_control=1';
+      '?embed_from=oembed&autoplay=1&loop=1&music_info=1&description=0&volume_control=1';
     document.getElementById('lbFrame').innerHTML=
-      '<iframe src="'+src+'" allow="autoplay; fullscreen; encrypted-media; picture-in-picture" '+
+      '<iframe src="'+src+'" allow="accelerometer; autoplay; clipboard-write; encrypted-media; fullscreen; gyroscope; picture-in-picture; web-share" '+
       'allowfullscreen scrolling="no" frameborder="0"></iframe>';
     [500,1200,2200].forEach(ms=>setTimeout(lbUnmute,ms));   // några försök att slå på ljudet
   }
