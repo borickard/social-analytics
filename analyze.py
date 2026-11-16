@@ -913,13 +913,15 @@ function lbRenderEdit(p){
       `<select class="lbsel" data-f="${esc(f)}">${opts}</select></div>`;
   }).join('');
   const actions=many?
-    `<button class="pill" data-lb="prev"${lbIdx<=0?' disabled':''}>← Föreg.</button>`+
-    `<button class="pill" data-lb="skip">Hoppa över →</button>`+
-    `<button class="pill dark" data-lb="done">Granskad ✓ → nästa</button>`:
+    `<button class="pill" data-lb="prev"${lbIdx<=0?' disabled':''}>← Tillbaka</button>`+
+    `<div class="lb-actions-right">`+
+      `<button class="pill" data-lb="skip">Hoppa över →</button>`+
+      `<button class="pill dark" data-lb="done">Granskad ✓</button></div>`:
     `<button class="pill dark" data-lb="save"${lbHasPending()?'':' disabled'}>Spara ändringar</button>`;
-  ed.innerHTML=pos+
+  ed.innerHTML='<div class="lb-scroll">'+pos+
     '<div class="lb-cap">'+(esc(p.caption)||'<span class="muted">(ingen beskrivning)</span>')+'</div>'+
-    fields+'<div class="lb-actions">'+actions+'</div>';
+    fields+'</div>'+
+    '<div class="lb-actions">'+actions+'</div>';
   ed.hidden=false;
 }
 function openVideo(id,url,navList){
@@ -1430,9 +1432,11 @@ def main():
       .lb-left{display:flex;flex-direction:column;align-items:center;gap:12px;flex:0 0 auto}
       /* redigeringspanel bredvid videon – tagga medan man tittar */
       .lb-edit{flex:0 0 auto;width:min(84vw,270px);background:var(--panel);color:var(--ink);
-        border-radius:16px;padding:16px 16px 18px;max-height:78vh;overflow:auto;text-align:left;
-        box-shadow:0 30px 80px rgba(0,0,0,.5)}
+        border-radius:16px;padding:16px;max-height:80vh;display:flex;flex-direction:column;
+        text-align:left;box-shadow:0 30px 80px rgba(0,0,0,.5)}
       .lb-edit[hidden]{display:none}
+      /* fälten scrollar – knappraden ligger utanför scrollen, alltid synlig */
+      .lb-scroll{overflow:auto;flex:1 1 auto;min-height:0}
       .lb-edit .lb-cap{font-size:12.5px;color:var(--muted);line-height:1.45;margin:0 0 14px;
         max-height:5.2em;overflow:auto}
       .lb-edit .ffield{margin-bottom:11px}
@@ -1441,9 +1445,11 @@ def main():
       /* ändrat men osparat fält markeras tills man väljer Granskad/Spara */
       .lb-edit .ffield.changed label{color:var(--iq-blue)}
       .lb-edit .ffield.changed select{border-color:var(--iq-blue);background:#1359c50d}
-      .lb-actions{display:flex;flex-wrap:wrap;gap:7px;margin-top:16px}
-      .lb-actions .pill{flex:1 1 auto;justify-content:center;text-align:center;padding:9px 10px;font-size:12.5px}
-      .lb-actions .pill.dark{flex-basis:100%}
+      .lb-actions{display:flex;align-items:center;justify-content:space-between;gap:8px;
+        flex-shrink:0;padding-top:12px;margin-top:12px;border-top:1px solid var(--line)}
+      .lb-actions-right{display:flex;gap:7px}
+      .lb-actions .pill{padding:9px 12px;font-size:12.5px;white-space:nowrap}
+      .lb-actions .pill[data-lb="save"]{width:100%;justify-content:center;text-align:center}
       .lb-frame{width:min(78vw,320px);aspect-ratio:9/16;max-height:78vh;border-radius:16px;overflow:hidden;
         background:#000;box-shadow:0 30px 80px rgba(0,0,0,.5)}
       @media(max-width:640px){
@@ -1451,6 +1457,9 @@ def main():
         .lb-inner{max-height:94vh;overflow:auto}
         .lb-frame{max-height:56vh}
         .lb-edit{width:min(90vw,340px);max-height:none}
+        /* på mobil scrollar hela rutan – håll knappraden fast längst ner */
+        .lb-actions{position:sticky;bottom:-16px;background:var(--panel);
+          padding-bottom:12px;margin-bottom:-4px}
       }
       .lb-frame iframe{width:100%;height:100%;border:0;display:block}
       .lb-gone{width:100%;height:100%;position:relative;display:flex;align-items:flex-end}
