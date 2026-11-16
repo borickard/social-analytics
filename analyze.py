@@ -752,6 +752,17 @@ const REV_KEY='iq_reviewed_'+POSTS.length;
 function loadRev(){try{return new Set(JSON.parse(localStorage.getItem(REV_KEY)||'[]'));}catch(e){return new Set();}}
 let reviewed=loadRev();
 function saveRev(){try{localStorage.setItem(REV_KEY,JSON.stringify([...reviewed]));}catch(e){}}
+// Packa granskade-setet som en bitmask (1 bit per inlägg i POSTS-ordning) och
+// base64url-koda – kort nog att ligga i URL:en även med hundratals granskade.
+function encodeRev(){
+  if(!reviewed.size)return '';
+  const by=new Uint8Array((POSTS.length+7)>>3);
+  POSTS.forEach((p,i)=>{if(reviewed.has(p.id))by[i>>3]|=1<<(i&7);});
+  let s='';for(let i=0;i<by.length;i++)s+=String.fromCharCode(by[i]);
+  try{return btoa(s).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');}catch(e){return '';}}
+function decodeRev(code){
+  try{const s=atob(code.replace(/-/g,'+').replace(/_/g,'/'));
+    POSTS.forEach((p,i)=>{if((s.charCodeAt(i>>3)||0)&(1<<(i&7)))reviewed.add(p.id);});}catch(e){}}
 let flowStatus='all', flowField='', flowVal='', flowQuery='', flowHide=false, flowList=[], flowIdx=0;
 // Inlägget man jobbar med just nu "nålas fast" så det inte filtreras bort mitt
 // i en redigering (t.ex. när "Ej justerade" eller "dölj granskade" är på).
@@ -817,7 +828,7 @@ function flowAct(act){
   if(!flowList.length)return;const id=flowList[flowIdx];
   flowFocusId=null;                       // släpp pinnen – nu får posten filtreras bort
   if(act==='prev'){if(flowIdx>0)flowIdx--;renderFlow();return;}
-  if(act==='done'&&id){reviewed.add(id);saveRev();
+  if(act==='done'&&id){reviewed.add(id);saveRev();syncURL();
     if(flowHide){renderFlow();return;}}            // rebuild drops den → nästa glider in
   if(flowIdx<flowList.length-1)flowIdx++;
   renderFlow();}
@@ -829,6 +840,14 @@ function updateFlowValFilter(){const vs=document.getElementById('fval');if(!vs)r
   if(!flowField){vs.innerHTML='<option value="">–</option>';vs.disabled=true;return;}
   vs.disabled=false;vs.innerHTML='<option value="">(alla värden)</option>'+
     (window.EDITABLE[flowField]||[]).map(v=>`<option value="${esc(v)}">${esc(v||'(tom)')}</option>`).join('');}
+// Speglar justeringsflödets filter-tillstånd ut i kontrollerna (efter att de fyllts).
+function applyFlowUI(){
+  document.querySelectorAll('.pill[data-fstatus]').forEach(x=>x.classList.toggle('active',x.dataset.fstatus===flowStatus));
+  const ff=document.getElementById('ffield');if(ff)ff.value=flowField;
+  updateFlowValFilter();
+  const fv=document.getElementById('fval');if(fv)fv.value=flowVal;
+  const fh=document.getElementById('fhide');if(fh)fh.checked=flowHide;
+  const fsq=document.getElementById('fsearch');if(fsq)fsq.value=flowQuery;}
 function showTab(name){
   document.querySelectorAll('.tabpanel').forEach(p=>{p.hidden=(p.dataset.tab!==name);});
   document.querySelectorAll('.tab').forEach(b=>b.classList.toggle('active',b.dataset.tab===name));
@@ -986,7 +1005,7 @@ function lbCommit(id){
 }
 function lbAct(act){
   const id=lbNav[lbIdx]||_lbId;if(!id)return;
-  if(act==='done'){lbCommit(id);reviewed.add(id);saveRev();lbPending={};lbGo(1);return;}
+  if(act==='done'){lbCommit(id);reviewed.add(id);saveRev();if(typeof syncURL==='function')syncURL();lbPending={};lbGo(1);return;}
   if(act==='skip'){
     if(lbHasPending()&&!confirm('Du har ändringar som inte sparats. Hoppa över utan att spara?'))return;
     lbPending={};lbGo(1);return;}
@@ -1058,7 +1077,7 @@ document.addEventListener('click',e=>{
   if(tb){showTab(tb.dataset.tab);return;}
   const fst=e.target.closest('.pill[data-fstatus]');
   if(fst){flowStatus=fst.dataset.fstatus;flowIdx=0;flowFocusId=null;
-    document.querySelectorAll('.pill[data-fstatus]').forEach(x=>x.classList.toggle('active',x===fst));renderFlow();return;}
+    document.querySelectorAll('.pill[data-fstatus]').forEach(x=>x.classList.toggle('active',x===fst));renderFlow();syncURL();return;}
   const fa=e.target.closest('.pill[data-flow]');
   if(fa){flowAct(fa.dataset.flow);return;}
   const act=e.target.closest('[data-act]');
@@ -1098,9 +1117,9 @@ document.addEventListener('change',e=>{
     if(f==='__adj__')searchAdj=v;
     else if(v==='__all__')delete searchFilters[f]; else searchFilters[f]=v;
     renderSearch();syncURL();return;}
-  if(e.target.id==='ffield'){flowField=e.target.value;flowVal='';updateFlowValFilter();flowIdx=0;flowFocusId=null;renderFlow();return;}
-  if(e.target.id==='fval'){flowVal=e.target.value;flowIdx=0;flowFocusId=null;renderFlow();return;}
-  if(e.target.id==='fhide'){flowHide=e.target.checked;flowIdx=0;flowFocusId=null;renderFlow();return;}
+  if(e.target.id==='ffield'){flowField=e.target.value;flowVal='';updateFlowValFilter();flowIdx=0;flowFocusId=null;renderFlow();syncURL();return;}
+  if(e.target.id==='fval'){flowVal=e.target.value;flowIdx=0;flowFocusId=null;renderFlow();syncURL();return;}
+  if(e.target.id==='fhide'){flowHide=e.target.checked;flowIdx=0;flowFocusId=null;renderFlow();syncURL();return;}
 });
 document.querySelectorAll('.pill[data-seg]').forEach(b=>b.addEventListener('click',e=>{
   segment=e.currentTarget.dataset.seg;
@@ -1163,6 +1182,13 @@ function syncURL(){
   if(sv)q.set('q',sv);
   if(searchAdj!=='all')q.set('adj',searchAdj);
   for(const f in searchFilters)q.set('f_'+f,searchFilters[f]);
+  // Justeringsflödets filter + vilka inlägg som granskats (för "fortsätt där jag är").
+  if(flowStatus!=='all')q.set('fstatus',flowStatus);
+  if(flowField)q.set('ffield',flowField);
+  if(flowVal)q.set('fval',flowVal);
+  if(flowQuery)q.set('fq',flowQuery);
+  if(flowHide)q.set('fhide','1');
+  const rv=encodeRev();if(rv){q.set('rev',rv);q.set('rn',POSTS.length);}
   const s=q.toString();
   try{history.replaceState(null,'',s?('?'+s):location.pathname);}catch(e){}
 }
@@ -1179,6 +1205,14 @@ function restoreURL(){
     sel.value=(f==='__adj__')?searchAdj:((f in searchFilters)?searchFilters[f]:'__all__');});
   const from=q.get('from'),to=q.get('to');
   if(from||to)setPeriod(from||'',to||'');
+  // Justeringsflödets filter (kontrollerna speglas i applyFlowUI efter att de fyllts).
+  flowStatus=q.get('fstatus')||'all';
+  flowField=q.get('ffield')||'';
+  flowVal=q.get('fval')||'';
+  flowQuery=q.get('fq')||'';
+  flowHide=q.get('fhide')==='1';
+  // Granskade-setet läggs till (union med localStorage) om bygget matchar (rn).
+  const rev=q.get('rev');if(rev&&(+q.get('rn')||0)===POSTS.length){decodeRev(rev);saveRev();}
   return q.get('tab');
 }
 
@@ -1194,8 +1228,9 @@ _restoring=false;
 renderAll();
 // Flikar + justeringsflöde.
 populateFlowFilters();
+applyFlowUI();
 const _fsearch=document.getElementById('fsearch');
-if(_fsearch)_fsearch.addEventListener('input',()=>{flowQuery=_fsearch.value;flowIdx=0;flowFocusId=null;renderFlow();});
+if(_fsearch)_fsearch.addEventListener('input',()=>{flowQuery=_fsearch.value;flowIdx=0;flowFocusId=null;renderFlow();syncURL();});
 let _initTab=_urlTab||'insikter';try{if(!_urlTab)_initTab=localStorage.getItem('iq_tab')||'insikter';}catch(e){}
 showTab(_initTab);
 syncURL();
