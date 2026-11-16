@@ -988,8 +988,11 @@ window.addEventListener('message',e=>{
   if(!_lbId||document.getElementById('lightbox').hidden)return;
   let d=e.data;if(typeof d==='string'){try{d=JSON.parse(d);}catch(_){return;}}
   const kind=((d&&(d.type||d.event||d.name))||'')+'';
-  if(/error/i.test(kind))lbUnavailable(BY_ID[_lbId]);
-  else if(/ready|play|state/i.test(kind))lbUnmute();   // slå på ljudet när spelaren är igång
+  // Lita på vår egen tillgänglighetsdata (p.gone) för "inte tillgänglig" – INTE
+  // på spelarens runtime-meddelanden. Spelaren rapporterar "error" även för
+  // levande videor (t.ex. när autoplay/ljud blockeras), vilket annars felaktigt
+  // dolde videon. Vi reagerar bara på ready/play för att slå på ljudet.
+  if(/ready|play|state/i.test(kind))lbUnmute();
 });
 document.addEventListener('click',e=>{
   // Klick på ett video-id → kopiera det (lätt att hitta tillbaka / söka på).
@@ -1436,9 +1439,11 @@ def main():
         text-align:left;box-shadow:0 30px 80px rgba(0,0,0,.5)}
       .lb-edit[hidden]{display:none}
       /* fälten scrollar – knappraden ligger utanför scrollen, alltid synlig */
-      .lb-scroll{overflow:auto;flex:1 1 auto;min-height:0}
-      .lb-edit .lb-cap{font-size:12.5px;color:var(--muted);line-height:1.45;margin:0 0 14px;
-        max-height:5.2em;overflow:auto}
+      .lb-scroll{overflow-y:auto;overflow-x:hidden;flex:1 1 auto;min-height:0;
+        scrollbar-width:thin;scrollbar-color:var(--line) transparent;padding-right:4px}
+      .lb-scroll::-webkit-scrollbar{width:6px}
+      .lb-scroll::-webkit-scrollbar-thumb{background:var(--line);border-radius:3px}
+      .lb-edit .lb-cap{font-size:12.5px;color:var(--muted);line-height:1.45;margin:0 0 14px}
       .lb-edit .ffield{margin-bottom:11px}
       .lb-pos{font-size:12px;color:var(--muted);font-weight:700;margin:0 0 12px}
       .lb-pos b{color:var(--ink)}
