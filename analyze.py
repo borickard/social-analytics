@@ -952,24 +952,28 @@ function lbRenderEdit(p){
     '<div class="lb-actions">'+actions+'</div>';
   ed.hidden=false;
 }
-// Ladda TikTok-spelaren. embed_from=oembed KRÄVS – annars svarar den "Player
-// authentication failed". TikTok rate-limitar dessutom ibland första försöket
-// per domän; om spelaren inte börjat spela (inget meddelande) inom några sek
-// laddar vi om den automatiskt – då slipper man göra om det manuellt.
-let _lbReady=false,_lbRetries=0,_lbRetryTimer=null;
-function lbLoadPlayer(id,isRetry){
-  _lbReady=false;if(!isRetry)_lbRetries=0;
+// Visa miniatyren med en spela-knapp – ladda INTE TikTok-spelaren förrän man
+// klickar. När man bläddrar snabbt i granskningsflödet laddas annars en ny
+// iframe per inlägg, vilket får TikTok att rate-limita domänen (då failar ALLA
+// videor med "Player authentication failed"). Med klick-för-att-spela görs bara
+// en request i taget, för de videor man faktiskt vill se.
+let _lbReady=false,_lbRetryTimer=null;
+function lbPlayStub(p){
+  const thumb=(p&&p.thumb)?'<img src="'+esc(p.thumb)+'" alt="">':'';
+  document.getElementById('lbFrame').innerHTML=
+    '<button type="button" class="lb-play" data-lb="play" aria-label="Spela upp video">'+
+    thumb+'<span class="lb-play-ico">▶</span><span class="lb-play-txt">Spela upp</span></button>';
+}
+// Ladda TikTok-spelaren. embed_from=oembed KRÄVS – annars "Player authentication
+// failed". Anropas bara på klick (spela-knappen eller "ladda om").
+function lbLoadPlayer(id){
+  _lbReady=false;
   const src='https://www.tiktok.com/player/v1/'+encodeURIComponent(id)+
-    '?embed_from=oembed&autoplay=1&loop=1&music_info=1&description=0&volume_control=1&_r='+Date.now();
+    '?embed_from=oembed&autoplay=1&loop=1&music_info=1&description=0&volume_control=1';
   document.getElementById('lbFrame').innerHTML=
     '<iframe src="'+src+'" allow="accelerometer; autoplay; clipboard-write; encrypted-media; fullscreen; gyroscope; picture-in-picture; web-share" '+
     'allowfullscreen scrolling="no" frameborder="0"></iframe>';
   [500,1200,2200].forEach(ms=>setTimeout(lbUnmute,ms));   // några försök att slå på ljudet
-  clearTimeout(_lbRetryTimer);
-  _lbRetryTimer=setTimeout(()=>{
-    if(_lbReady||_lbId!==id||document.getElementById('lightbox').hidden||_lbRetries>=2)return;
-    _lbRetries++;lbLoadPlayer(id,true);
-  },3200);
 }
 function openVideo(id,url,navList){
   if(!id)return;
@@ -978,12 +982,14 @@ function openVideo(id,url,navList){
   else if(!lbNav.length){lbNav=[id];lbIdx=0;}
   lbPending={};                                       // färska, osparade ändringar per inlägg
   const op=document.getElementById('lbOpen');if(op)op.href=url||(p&&p.url)||'#';
+  const isVid=p&&!p.gone&&p.typ!=='bild';
+  const rl=document.getElementById('lbReload');if(rl)rl.hidden=!isVid;   // "ladda om" bara för video
   if(p&&p.gone){
     lbUnavailable(p);                                 // känd borttagen → ingen iframe
   }else if(p&&p.typ==='bild'){
     lbPhoto(p);                                       // foto/karusell → kan ej bäddas in
   }else{
-    lbLoadPlayer(id);
+    lbPlayStub(p);                                    // miniatyr + spela-knapp (laddar på klick)
   }
   lbRenderEdit(p);
   document.getElementById('lightbox').hidden=false;
@@ -1005,6 +1011,7 @@ function lbCommit(id){
 }
 function lbAct(act){
   const id=lbNav[lbIdx]||_lbId;if(!id)return;
+  if(act==='play'||act==='reload'){lbLoadPlayer(id);return;}  // ladda spelaren på klick
   if(act==='done'){lbCommit(id);reviewed.add(id);saveRev();if(typeof syncURL==='function')syncURL();lbPending={};lbGo(1);return;}
   if(act==='skip'){
     if(lbHasPending()&&!confirm('Du har ändringar som inte sparats. Hoppa över utan att spara?'))return;
@@ -1537,6 +1544,19 @@ def main():
           padding-bottom:12px;margin-bottom:-4px}
       }
       .lb-frame iframe{width:100%;height:100%;border:0;display:block}
+      /* video: miniatyr + spela-knapp (laddar TikTok-spelaren först på klick) */
+      .lb-play{width:100%;height:100%;position:relative;display:flex;flex-direction:column;
+        align-items:center;justify-content:center;gap:10px;border:0;cursor:pointer;padding:0;
+        background:#000;color:#fff;font-family:var(--disp)}
+      .lb-play img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;filter:brightness(.62)}
+      .lb-play-ico{position:relative;z-index:1;width:62px;height:62px;border-radius:999px;
+        display:flex;align-items:center;justify-content:center;font-size:23px;padding-left:4px;
+        background:rgba(255,255,255,.16);border:1.5px solid rgba(255,255,255,.7);
+        backdrop-filter:blur(2px);transition:transform .12s,background .12s}
+      .lb-play-txt{position:relative;z-index:1;font-size:13px;font-weight:700;letter-spacing:.02em;
+        text-shadow:0 1px 6px rgba(0,0,0,.6)}
+      .lb-play:hover .lb-play-ico{background:rgba(255,255,255,.28);transform:scale(1.06)}
+      .lb-bar{display:flex;gap:8px;align-items:center;justify-content:center;flex-wrap:wrap}
       .lb-gone{width:100%;height:100%;position:relative;display:flex;align-items:flex-end}
       .lb-gone img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;
         filter:grayscale(1) brightness(.4)}
@@ -1548,7 +1568,8 @@ def main():
         background:rgba(255,255,255,.14);color:#fff;font-size:17px;cursor:pointer;line-height:1}
       .lb-x:hover{background:rgba(255,255,255,.28)}
       .lb-open{color:#fff;font-size:13.5px;font-weight:700;text-decoration:none;opacity:.85;
-        border:1px solid rgba(255,255,255,.3);border-radius:999px;padding:7px 15px}
+        border:1px solid rgba(255,255,255,.3);border-radius:999px;padding:7px 15px;
+        background:none;cursor:pointer;font-family:inherit;line-height:1}
       .lb-open:hover{opacity:1;background:rgba(255,255,255,.12)}
       @media(max-width:560px){.lb-x{top:-42px}}
       /* ER-badge (bara siffran; "viktad ER" vid hover) + median-chip */
@@ -1825,7 +1846,10 @@ def main():
                 '<div class="lb-stage">'
                 '<div class="lb-left">'
                 '<div class="lb-frame" id="lbFrame"></div>'
+                '<div class="lb-bar">'
+                '<button type="button" class="lb-open" id="lbReload" data-lb="reload" hidden>↻ Ladda om</button>'
                 '<a class="lb-open" id="lbOpen" target="_blank" rel="noopener">Öppna på TikTok ↗</a>'
+                '</div>'
                 '</div>'
                 '<div class="lb-edit" id="lbEdit" hidden></div>'
                 '</div>'
