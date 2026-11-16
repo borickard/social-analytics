@@ -1,12 +1,17 @@
 #!/usr/bin/env python3
 """
-Kontrollerar vilka TikTok-videor som fortfarande finns kvar (inte borttagna
-eller satta till privata) genom att fråga TikToks publika oEmbed-endpoint.
+Kontrollerar vilka TikTok-inlägg som fortfarande finns kvar (inte borttagna)
+genom att läsa sidans inbäddade statusCode (samma data som scrapern använder).
 
-  live video   → HTTP 200 + JSON (title/html)   → status "live"
-  borttagen    → HTTP 400/404                    → status "gone"
-  tillfälligt  → 429/5xx/timeout                 → hoppas över (okänt), tas
-                 om vid nästa körning.
+  statusCode 0 + itemStruct  → "live"
+  statusCode 10204           → "gone" ("item doesn't exist" = borttagen)
+  okänt tillstånd            → "live" (flaggas inte i onödan)
+  ingen data / blockerad sida→ tillfälligt, tas om vid nästa körning
+
+Obs: oEmbed-endpointen (som användes förut) är opålitlig – den kan svara fel
+åt BÅDA håll (fel för levande men ej inbäddningsbara videor, och 200 för redan
+borttagna). Därför läser vi sidans statusCode i stället. /photo/-URL:er
+normaliseras till /video/ (där datan server-renderas).
 
 Resultatet skrivs till iq_tiktok_data/availability.csv (video_id,status,checked)
 och ligger – precis som overrides.csv – SEPARAT från enriched.csv så att
@@ -24,6 +29,7 @@ import csv
 import json
 import os
 import random
+import re
 import ssl
 import sys
 import time
@@ -72,29 +78,36 @@ def days_since(d):
         return 10 ** 6
 
 
+RE_REHY = re.compile(
+    r'__UNIVERSAL_DATA_FOR_REHYDRATION__"[^>]*>(.*?)</script>', re.S)
+
+
 def check_one(url):
-    """Returnerar 'live' eller 'gone', eller kastar vid tillfälligt fel."""
-    # TikToks oEmbed vill ha /video/<id>-formen för ALLA inlägg – även foto-/
-    # karusellinlägg. Skickar man deras riktiga /photo/-URL svarar oEmbed 400
-    # fastän inlägget lever. Normalisera därför till /video/ före anropet.
+    """Returnerar 'live' eller 'gone', eller kastar vid tillfälligt/oklart fel.
+
+    Läser sidans server-renderade statusCode (webapp.video-detail) – pålitligt,
+    till skillnad från oEmbed. /photo/ normaliseras till /video/ (SSR:as där)."""
     url = url.replace("/photo/", "/video/")
-    api = "https://www.tiktok.com/oembed?url=" + urllib.parse.quote(url, safe="")
-    req = urllib.request.Request(api, headers={"User-Agent": UA,
-                                               "Accept": "application/json"})
-    try:
-        with _opener.open(req, timeout=25) as r:
-            body = r.read().decode("utf-8", "replace")
-        data = json.loads(body)
-        # Live-svar har alltid html/thumbnail; title kan vara tom.
-        if data.get("html") or data.get("thumbnail_url") or data.get("title"):
-            return "live"
+    req = urllib.request.Request(url, headers={
+        "User-Agent": UA,
+        "Accept-Language": "sv-SE,sv;q=0.9,en;q=0.8"})
+    with _opener.open(req, timeout=30) as r:
+        html = r.read().decode("utf-8", "replace")
+    m = RE_REHY.search(html)
+    if not m:
+        # Blockerad/ofullständig sida (t.ex. rate-limit) – inte ett svar vi kan
+        # lita på. Kasta så det blir ett återförsök i stället för falskt "gone".
+        raise RuntimeError("ingen data på sidan (blockerad/ofullständig)")
+    vd = (json.loads(m.group(1)).get("__DEFAULT_SCOPE__", {})
+          .get("webapp.video-detail", {}))
+    status = vd.get("statusCode")
+    has_item = bool(vd.get("itemInfo", {}).get("itemStruct"))
+    if status == 0 and has_item:
+        return "live"
+    if status == 10204:                 # "item doesn't exist" = borttagen/raderad
         return "gone"
-    except urllib.error.HTTPError as e:
-        if e.code in (400, 404, 403):      # videon finns inte / ej publik
-            return "gone"
-        raise                              # 429/5xx → tillfälligt
-    except json.JSONDecodeError:
-        return "gone"                      # 200 men inget vettigt JSON
+    # Okänt tillstånd (privat, regionblock, udda kod) → flagga INTE som borttaget.
+    return "live"
 
 
 def check(url):
