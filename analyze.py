@@ -933,6 +933,25 @@ function lbRenderEdit(p){
     '<div class="lb-actions">'+actions+'</div>';
   ed.hidden=false;
 }
+// Ladda TikTok-spelaren. embed_from=oembed KRÄVS – annars svarar den "Player
+// authentication failed". TikTok rate-limitar dessutom ibland första försöket
+// per domän; om spelaren inte börjat spela (inget meddelande) inom några sek
+// laddar vi om den automatiskt – då slipper man göra om det manuellt.
+let _lbReady=false,_lbRetries=0,_lbRetryTimer=null;
+function lbLoadPlayer(id,isRetry){
+  _lbReady=false;if(!isRetry)_lbRetries=0;
+  const src='https://www.tiktok.com/player/v1/'+encodeURIComponent(id)+
+    '?embed_from=oembed&autoplay=1&loop=1&music_info=1&description=0&volume_control=1&_r='+Date.now();
+  document.getElementById('lbFrame').innerHTML=
+    '<iframe src="'+src+'" allow="accelerometer; autoplay; clipboard-write; encrypted-media; fullscreen; gyroscope; picture-in-picture; web-share" '+
+    'allowfullscreen scrolling="no" frameborder="0"></iframe>';
+  [500,1200,2200].forEach(ms=>setTimeout(lbUnmute,ms));   // några försök att slå på ljudet
+  clearTimeout(_lbRetryTimer);
+  _lbRetryTimer=setTimeout(()=>{
+    if(_lbReady||_lbId!==id||document.getElementById('lightbox').hidden||_lbRetries>=2)return;
+    _lbRetries++;lbLoadPlayer(id,true);
+  },3200);
+}
 function openVideo(id,url,navList){
   if(!id)return;
   const p=BY_ID[id];_lbId=id;
@@ -945,14 +964,7 @@ function openVideo(id,url,navList){
   }else if(p&&p.typ==='bild'){
     lbPhoto(p);                                       // foto/karusell → kan ej bäddas in
   }else{
-    // embed_from=oembed KRÄVS – annars svarar spelaren "Player authentication
-    // failed". volume_control=1 visar ljudknappen; ljudet slås på via lbUnmute.
-    const src='https://www.tiktok.com/player/v1/'+encodeURIComponent(id)+
-      '?embed_from=oembed&autoplay=1&loop=1&music_info=1&description=0&volume_control=1';
-    document.getElementById('lbFrame').innerHTML=
-      '<iframe src="'+src+'" allow="accelerometer; autoplay; clipboard-write; encrypted-media; fullscreen; gyroscope; picture-in-picture; web-share" '+
-      'allowfullscreen scrolling="no" frameborder="0"></iframe>';
-    [500,1200,2200].forEach(ms=>setTimeout(lbUnmute,ms));   // några försök att slå på ljudet
+    lbLoadPlayer(id);
   }
   lbRenderEdit(p);
   document.getElementById('lightbox').hidden=false;
@@ -986,7 +998,7 @@ function lbAct(act){
 function closeVideo(){
   const lb=document.getElementById('lightbox');if(!lb||lb.hidden)return;
   if(lbHasPending()&&!confirm('Du har ändringar som inte sparats. Stäng utan att spara?'))return;
-  lb.hidden=true;_lbId=null;lbPending={};lbNav=[];lbIdx=0;
+  lb.hidden=true;_lbId=null;lbPending={};lbNav=[];lbIdx=0;clearTimeout(_lbRetryTimer);
   document.getElementById('lbFrame').innerHTML='';   // stoppar uppspelningen
   const ed=document.getElementById('lbEdit');if(ed){ed.innerHTML='';ed.hidden=true;}
   document.body.classList.remove('noscroll');
@@ -998,13 +1010,14 @@ window.addEventListener('message',e=>{
   let host='';try{host=new URL(e.origin).hostname;}catch(_){return;}
   if(!/(^|\.)tiktok\.com$/.test(host))return;
   if(!_lbId||document.getElementById('lightbox').hidden)return;
+  // Hör vi av spelaren alls så lever den (auth-fel-sidan postar inga meddelanden)
+  // → markera som klar så vi inte laddar om en video som faktiskt funkar.
+  _lbReady=true;
   let d=e.data;if(typeof d==='string'){try{d=JSON.parse(d);}catch(_){return;}}
   const kind=((d&&(d.type||d.event||d.name))||'')+'';
-  // Lita på vår egen tillgänglighetsdata (p.gone) för "inte tillgänglig" – INTE
-  // på spelarens runtime-meddelanden. Spelaren rapporterar "error" även för
-  // levande videor (t.ex. när autoplay/ljud blockeras), vilket annars felaktigt
-  // dolde videon. Vi reagerar bara på ready/play för att slå på ljudet.
-  if(/ready|play|state/i.test(kind))lbUnmute();
+  // Vi litar på vår egen data (p.gone) för "inte tillgänglig", inte på spelarens
+  // error-meddelanden (de kommer även för levande videor). Slå bara på ljudet.
+  if(/ready|play|state|current/i.test(kind))lbUnmute();
 });
 document.addEventListener('click',e=>{
   // Klick på ett video-id → kopiera det (lätt att hitta tillbaka / söka på).
