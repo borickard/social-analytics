@@ -886,6 +886,15 @@ function lbUnavailable(p){
     '<p>Den har tagits bort eller gjorts privat på TikTok. Siffrorna och '+
     'miniatyren finns kvar i dashboarden.</p></div></div>';
 }
+// Foto-/karusellinlägg går inte att bädda in i videospelaren (ger "Player
+// authentication failed"). Visa miniatyren + länk till TikTok i stället.
+function lbPhoto(p){
+  const thumb=(p&&p.thumb)?'<img src="'+esc(p.thumb)+'" alt="">':'';
+  document.getElementById('lbFrame').innerHTML=
+    '<div class="lb-photo">'+thumb+
+    '<div class="lb-photo-msg"><strong>Bildinlägg</strong>'+
+    '<p>Karusellinlägg (bilder) kan inte spelas upp här – öppna på TikTok för att se alla bilderna.</p></div></div>';
+}
 // Försök slå på ljudet i spelaren (webbläsare startar autoplay ljudlöst; vi
 // skickar unMute direkt efter att användaren själv öppnat rutan, vilket oftast
 // släpps igenom). Flera format/försök eftersom spelarens API inte är dokumenterat.
@@ -919,8 +928,8 @@ function lbRenderEdit(p){
       `<button class="pill dark" data-lb="done">Granskad ✓</button></div>`:
     `<button class="pill dark" data-lb="save"${lbHasPending()?'':' disabled'}>Spara ändringar</button>`;
   ed.innerHTML='<div class="lb-scroll">'+pos+
-    '<div class="lb-cap">'+(esc(p.caption)||'<span class="muted">(ingen beskrivning)</span>')+'</div>'+
-    fields+'</div>'+
+    '<div class="lb-cap" title="'+esc(p.caption||'')+'">'+(esc(p.caption)||'<span class="muted">(ingen beskrivning)</span>')+'</div>'+
+    '<div class="lb-fields">'+fields+'</div></div>'+
     '<div class="lb-actions">'+actions+'</div>';
   ed.hidden=false;
 }
@@ -933,6 +942,8 @@ function openVideo(id,url,navList){
   const op=document.getElementById('lbOpen');if(op)op.href=url||(p&&p.url)||'#';
   if(p&&p.gone){
     lbUnavailable(p);                                 // känd borttagen → ingen iframe
+  }else if(p&&p.typ==='bild'){
+    lbPhoto(p);                                       // foto/karusell → kan ej bäddas in
   }else{
     // embed_from=oembed KRÄVS – annars svarar spelaren "Player authentication
     // failed". volume_control=1 visar ljudknappen; ljudet slås på via lbUnmute.
@@ -1431,21 +1442,24 @@ def main():
       .lb{position:fixed;inset:0;z-index:60;display:flex;align-items:center;justify-content:center;padding:24px}
       .lb[hidden]{display:none}
       .lb-backdrop{position:absolute;inset:0;background:rgba(10,12,18,.82);backdrop-filter:blur(3px)}
-      .lb-inner{position:relative;z-index:1;max-width:min(96vw,680px);max-height:92vh}
+      .lb-inner{position:relative;z-index:1;max-width:min(96vw,820px);max-height:calc(100vh - 44px)}
       .lb-stage{display:flex;gap:16px;align-items:stretch;justify-content:center}
       .lb-left{display:flex;flex-direction:column;align-items:center;gap:12px;flex:0 0 auto}
-      /* redigeringspanel bredvid videon – tagga medan man tittar */
-      .lb-edit{flex:0 0 auto;width:min(84vw,270px);background:var(--panel);color:var(--ink);
-        border-radius:16px;padding:16px;max-height:80vh;display:flex;flex-direction:column;
-        text-align:left;box-shadow:0 30px 80px rgba(0,0,0,.5)}
+      /* redigeringspanel bredvid videon – bredare med fälten i två kolumner så
+         allt får plats utan scroll */
+      .lb-edit{flex:0 0 auto;width:min(90vw,460px);background:var(--panel);color:var(--ink);
+        border-radius:16px;padding:16px;max-height:min(84vh,calc(100vh - 92px));
+        display:flex;flex-direction:column;text-align:left;box-shadow:0 30px 80px rgba(0,0,0,.5)}
       .lb-edit[hidden]{display:none}
-      /* fälten scrollar – knappraden ligger utanför scrollen, alltid synlig */
+      /* scroll bara som nödlösning på väldigt låga skärmar – syns normalt inte */
       .lb-scroll{overflow-y:auto;overflow-x:hidden;flex:1 1 auto;min-height:0;
-        scrollbar-width:thin;scrollbar-color:var(--line) transparent;padding-right:4px}
+        scrollbar-width:thin;scrollbar-color:var(--line) transparent}
       .lb-scroll::-webkit-scrollbar{width:6px}
       .lb-scroll::-webkit-scrollbar-thumb{background:var(--line);border-radius:3px}
-      .lb-edit .lb-cap{font-size:12.5px;color:var(--muted);line-height:1.45;margin:0 0 14px}
-      .lb-edit .ffield{margin-bottom:11px}
+      .lb-fields{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:11px 14px;margin-top:2px}
+      .lb-edit .lb-cap{font-size:12.5px;color:var(--muted);line-height:1.45;margin:0 0 14px;
+        display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+      .lb-edit .ffield{margin-bottom:0}
       .lb-pos{font-size:12px;color:var(--muted);font-weight:700;margin:0 0 12px}
       .lb-pos b{color:var(--ink)}
       /* ändrat men osparat fält markeras tills man väljer Granskad/Spara */
@@ -1456,8 +1470,15 @@ def main():
       .lb-actions-right{display:flex;gap:7px}
       .lb-actions .pill{padding:9px 12px;font-size:12.5px;white-space:nowrap}
       .lb-actions .pill[data-lb="save"]{width:100%;justify-content:center;text-align:center}
-      .lb-frame{width:min(78vw,320px);aspect-ratio:9/16;max-height:78vh;border-radius:16px;overflow:hidden;
-        background:#000;box-shadow:0 30px 80px rgba(0,0,0,.5)}
+      .lb-frame{width:min(78vw,320px);aspect-ratio:9/16;max-height:min(78vh,calc(100vh - 92px));
+        border-radius:16px;overflow:hidden;background:#000;box-shadow:0 30px 80px rgba(0,0,0,.5)}
+      /* bildinlägg: miniatyr + not (kan ej spelas upp här) */
+      .lb-photo{width:100%;height:100%;position:relative;display:flex;align-items:flex-end}
+      .lb-photo img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+      .lb-photo-msg{position:relative;z-index:1;padding:18px 16px;color:#fff;
+        background:linear-gradient(transparent,rgba(10,12,18,.9))}
+      .lb-photo-msg strong{display:block;font-family:var(--disp);font-size:15px;margin-bottom:4px}
+      .lb-photo-msg p{margin:0;font-size:12px;color:rgba(255,255,255,.85);line-height:1.45}
       @media(max-width:640px){
         .lb-stage{flex-direction:column;align-items:center}
         .lb-inner{max-height:94vh;overflow:auto}
