@@ -957,23 +957,43 @@ function lbRenderEdit(p){
 // iframe per inlägg, vilket får TikTok att rate-limita domänen (då failar ALLA
 // videor med "Player authentication failed"). Med klick-för-att-spela görs bara
 // en request i taget, för de videor man faktiskt vill se.
-let _lbReady=false,_lbRetryTimer=null;
-function lbPlayStub(p){
+let _lbReady=false,_lbRetryTimer=null,_lbTries=0;
+function lbPlayStub(p,note){
   const thumb=(p&&p.thumb)?'<img src="'+esc(p.thumb)+'" alt="">':'';
+  const txt=note||'Spela upp';
   document.getElementById('lbFrame').innerHTML=
     '<button type="button" class="lb-play" data-lb="play" aria-label="Spela upp video">'+
-    thumb+'<span class="lb-play-ico">▶</span><span class="lb-play-txt">Spela upp</span></button>';
+    thumb+'<span class="lb-play-ico">▶</span><span class="lb-play-txt">'+esc(txt)+'</span></button>';
 }
 // Ladda TikTok-spelaren. embed_from=oembed KRÄVS – annars "Player authentication
 // failed". Anropas bara på klick (spela-knappen eller "ladda om").
-function lbLoadPlayer(id){
-  _lbReady=false;
+//
+// TikTok rate-limitar inbäddningar per domän slumpmässigt – ibland svarar
+// spelaren "authentication failed" trots att videon finns. Eftersom bara EN
+// video laddas i taget (klick-för-att-spela) kan vi nu tryggt försöka om just
+// den som tittas på: lyckad laddning postar ett meddelande (_lbReady), annars
+// laddar vi om med växande paus. Det gör slumpmässiga fel självläkande utan att
+// mata på och förvärra strypningen.
+const LB_MAX_TRIES=4;
+function lbLoadPlayer(id,isRetry){
+  if(!isRetry)_lbTries=0;
+  _lbTries++;_lbReady=false;
+  // Cache-buster bara vid omförsök – tvingar fram en färsk begäran förbi ev.
+  // cachat felsvar (första laddningen matchar oembed-länken exakt).
   const src='https://www.tiktok.com/player/v1/'+encodeURIComponent(id)+
-    '?embed_from=oembed&autoplay=1&loop=1&music_info=1&description=0&volume_control=1';
+    '?embed_from=oembed&autoplay=1&loop=1&music_info=1&description=0&volume_control=1'+
+    (isRetry?('&_r='+Date.now()):'');
   document.getElementById('lbFrame').innerHTML=
     '<iframe src="'+src+'" allow="accelerometer; autoplay; clipboard-write; encrypted-media; fullscreen; gyroscope; picture-in-picture; web-share" '+
     'allowfullscreen scrolling="no" frameborder="0"></iframe>';
   [500,1200,2200].forEach(ms=>setTimeout(lbUnmute,ms));   // några försök att slå på ljudet
+  clearTimeout(_lbRetryTimer);
+  _lbRetryTimer=setTimeout(()=>{
+    if(_lbReady||_lbId!==id||document.getElementById('lightbox').hidden)return;  // funkar/bytt → sluta
+    if(_lbTries<LB_MAX_TRIES){lbLoadPlayer(id,true);return;}                     // försök om
+    lbPlayStub(BY_ID[id],'Kunde inte ladda – försök igen');                      // ge upp → klickbar igen
+    toast('TikTok svarar långsamt just nu – tryck för att försöka igen');
+  },2600+_lbTries*600);
 }
 function openVideo(id,url,navList){
   if(!id)return;
