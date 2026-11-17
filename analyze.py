@@ -1014,6 +1014,16 @@ function openVideo(id,url,navList){
   lbRenderEdit(p);
   document.getElementById('lightbox').hidden=false;
   document.body.classList.add('noscroll');
+  lbPreload();                                         // värm nästa inläggs miniatyr(er)
+}
+// Förladda miniatyren för de kommande inläggen i navigeringslistan så att de
+// redan ligger i webbläsarens cache när man bläddrar vidare (snabbare känsla).
+const _lbPre=new Set();
+function lbPreload(){
+  for(let k=1;k<=2;k++){
+    const np=BY_ID[lbNav[lbIdx+k]];
+    if(np&&np.thumb&&!_lbPre.has(np.thumb)){_lbPre.add(np.thumb);const im=new Image();im.src=np.thumb;}
+  }
 }
 // Byt inlägg i navigeringslistan (eller stäng efter det sista).
 function lbGo(delta){
