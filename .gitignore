@@ -13,6 +13,8 @@ iq_tiktok_data/*
 !iq_tiktok_data/availability.csv
 # Manuella taggrättelser bakas in i bygget så ALLA ser samma (oberoende av KV).
 !iq_tiktok_data/overrides.csv
+# Video-URL:er (egna hostade videor på Vercel Blob) bakas in i dashboarden.
+!iq_tiktok_data/video_urls.csv
 iq_tiktok_chrome_profil/
 videos/
 frames/

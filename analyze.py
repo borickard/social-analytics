@@ -127,6 +127,22 @@ def load_overrides():
     return ov
 
 
+def load_video_urls():
+    """Läs video_urls.csv → {video_id: url} (egna hostade videor på Vercel Blob,
+    skrivs av upload_videos_blob.mjs). Tom om filen saknas → dashboarden faller
+    tillbaka på TikToks inbäddning för alla."""
+    vu = {}
+    path = os.path.join(os.path.dirname(CSV_PATH) or ".", "video_urls.csv")
+    if os.path.exists(path):
+        with open(path, newline="", encoding="utf-8-sig") as f:
+            for r in csv.DictReader(f):
+                vid = (r.get("video_id") or "").strip()
+                url = (r.get("url") or "").strip()
+                if vid and url:
+                    vu[vid] = url
+    return vu
+
+
 def load_availability():
     """Läs availability.csv → {video_id: status}. Skrivs av check_availability.py.
     Tom om filen saknas (då markeras inga inlägg som borttagna)."""
@@ -975,7 +991,38 @@ function lbPlayStub(p,note){
 // laddar vi om med växande paus. Det gör slumpmässiga fel självläkande utan att
 // mata på och förvärra strypningen.
 const LB_MAX_TRIES=4;
+// Väljer spelare: egen hostad video (Vercel Blob) om vi har en URL – annars
+// TikToks inbäddning. Egen video har ingen rate-limit och spelar direkt.
 function lbLoadPlayer(id,isRetry){
+  clearTimeout(_lbRetryTimer);
+  const vurl=(window.VIDEOS||{})[id];
+  if(vurl){lbLoadSelf(id,vurl);return;}
+  lbLoadTikTok(id,isRetry);
+}
+// Egen hostad mp4. Klicket på "Spela upp" är en user-gesture → vi kan spela med
+// ljud direkt (faller tillbaka på ljudlöst om webbläsaren ändå blockerar).
+// Saknas/404:ar filen faller vi tillbaka på TikToks inbäddning.
+function lbLoadSelf(id,src){
+  _lbReady=true;const p=BY_ID[id];
+  document.getElementById('lbFrame').innerHTML=
+    '<video class="lb-video" src="'+esc(src)+'" autoplay loop playsinline controls preload="auto"'+
+    (p&&p.thumb?(' poster="'+esc(p.thumb)+'"'):'')+'></video>';
+  const v=document.querySelector('#lbFrame video');if(!v)return;
+  v.onerror=()=>{if(_lbId===id)lbLoadTikTok(id);};   // fil saknas → TikTok-fallback
+  v.muted=false;
+  const play=()=>v.play&&v.play().catch(()=>{v.muted=true;v.play&&v.play().catch(()=>{});});
+  play();
+}
+// Ladda TikTok-spelaren. embed_from=oembed KRÄVS – annars "Player authentication
+// failed". Anropas bara på klick (spela-knappen eller "ladda om").
+//
+// TikTok rate-limitar inbäddningar per domän slumpmässigt – ibland svarar
+// spelaren "authentication failed" trots att videon finns. Eftersom bara EN
+// video laddas i taget (klick-för-att-spela) kan vi nu tryggt försöka om just
+// den som tittas på: lyckad laddning postar ett meddelande (_lbReady), annars
+// laddar vi om med växande paus. Det gör slumpmässiga fel självläkande utan att
+// mata på och förvärra strypningen.
+function lbLoadTikTok(id,isRetry){
   if(!isRetry)_lbTries=0;
   _lbTries++;_lbReady=false;
   // Cache-buster bara vid omförsök – tvingar fram en färsk begäran förbi ev.
@@ -990,7 +1037,7 @@ function lbLoadPlayer(id,isRetry){
   clearTimeout(_lbRetryTimer);
   _lbRetryTimer=setTimeout(()=>{
     if(_lbReady||_lbId!==id||document.getElementById('lightbox').hidden)return;  // funkar/bytt → sluta
-    if(_lbTries<LB_MAX_TRIES){lbLoadPlayer(id,true);return;}                     // försök om
+    if(_lbTries<LB_MAX_TRIES){lbLoadTikTok(id,true);return;}                     // försök om
     lbPlayStub(BY_ID[id],'Kunde inte ladda – försök igen');                      // ge upp → klickbar igen
     toast('TikTok svarar långsamt just nu – tryck för att försöka igen');
   },2600+_lbTries*600);
@@ -1312,6 +1359,7 @@ def main():
     ana = load(CSV_PATH, ov)
     if not ana:
         sys.exit("Inga analyserade rader med visningar hittades.")
+    video_urls = load_video_urls()
     avail = load_availability()
     n_gone = 0
     for r in ana:
@@ -1574,6 +1622,7 @@ def main():
           padding-bottom:12px;margin-bottom:-4px}
       }
       .lb-frame iframe{width:100%;height:100%;border:0;display:block}
+      .lb-video{width:100%;height:100%;display:block;object-fit:contain;background:#000}
       /* video: miniatyr + spela-knapp (laddar TikTok-spelaren först på klick) */
       .lb-play{width:100%;height:100%;position:relative;display:flex;flex-direction:column;
         align-items:center;justify-content:center;gap:10px;border:0;cursor:pointer;padding:0;
@@ -1890,6 +1939,7 @@ def main():
 
     ov_js = json.dumps(ov, ensure_ascii=False).replace("</", "<\\/")
     edit_js = json.dumps(EDITABLE, ensure_ascii=False).replace("</", "<\\/")
+    vu_js = json.dumps(video_urls, ensure_ascii=False).replace("</", "<\\/")
 
     doc = (f'<!doctype html><html lang="sv"><head><meta charset="utf-8">'
            f'<meta name="viewport" content="width=device-width,initial-scale=1">'
@@ -1906,7 +1956,8 @@ def main():
            f'</div></div>{editor}{lightbox}{ovbar}'
            f'<script>window.POSTS={data_js};window.HAS_TONE={str(has_tone).lower()};'
            f'window.HAS_OCCASION={str(has_occasion).lower()};'
-           f'window.OVERRIDES={ov_js};window.EDITABLE={edit_js};</script>'
+           f'window.OVERRIDES={ov_js};window.EDITABLE={edit_js};'
+           f'window.VIDEOS={vu_js};</script>'
            f'<script>{APP_JS}</script></body></html>')
     with open(OUT_HTML, "w", encoding="utf-8") as f:
         f.write(doc)
