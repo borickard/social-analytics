@@ -30,7 +30,7 @@ PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
 CSV_PATH = os.path.join(PROJECT_DIR, "iq_tiktok_data", "iq_tiktok_enriched.csv")
 
 MODEL = os.environ.get("IQ_TONE_MODEL",
-                       os.environ.get("IQ_VISION_MODEL", "claude-sonnet-5"))
+                       os.environ.get("IQ_VISION_MODEL", "claude-sonnet-5-5"))
 MAX_RETRIES = int(os.environ.get("IQ_TONE_RETRIES", "6") or 6)
 LIMIT = int(os.environ.get("IQ_LIMIT", "0") or 0)
 
@@ -167,7 +167,7 @@ def classify(row):
     for attempt in range(1, MAX_RETRIES + 1):
         try:
             resp = client.messages.create(
-                model=MODEL, max_tokens=600,
+                model=MODEL, max_tokens=1500,
                 messages=[{"role": "user", "content": content}],
                 output_config={"format": {"type": "json_schema", "schema": SCHEMA}},
             )

@@ -44,7 +44,7 @@ OUT_CSV = os.path.join(DATA, "iq_tiktok_enriched.csv")
 
 # Vision-modell. claude-sonnet-5 = standard (bra kvalitet, billigare, mindre
 # överbelastning); claude-opus-5 = högsta kvalitet. Byt via IQ_VISION_MODEL.
-VISION_MODEL = os.environ.get("IQ_VISION_MODEL", "claude-sonnet-5")
+VISION_MODEL = os.environ.get("IQ_VISION_MODEL", "claude-sonnet-5-5")
 
 # Whisper-modell för transkribering. large-v3 = bäst men långsam på CPU (Mac).
 # Sätt t.ex. IQ_WHISPER_MODEL=medium eller small för snabbare körning.
@@ -75,6 +75,8 @@ MAX_CONSECUTIVE_FAILS = int(os.environ.get("IQ_MAX_CONSECUTIVE_FAILS", "5") or 5
 PRICING = {
     "claude-opus-5": (5.0, 25.0),
     "claude-sonnet-5": (3.0, 15.0),
+    "claude-opus-5-5": (5.0, 25.0),
+    "claude-sonnet-5-5": (3.0, 15.0),
 }
 USAGE = {"in": 0, "out": 0}   # ackumuleras i call_vision()
 
