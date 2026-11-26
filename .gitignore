@@ -34,3 +34,7 @@ studio_export.csv
 
 # Node
 node_modules/
+
+# Eval-utdata (genereras lokalt)
+eval_disagreements.csv
+eval_rerun_*.csv
