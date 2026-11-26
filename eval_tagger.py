@@ -38,7 +38,7 @@ OVERRIDES = os.path.join(DATA, "overrides.csv")
 # Redigerbara fält i dashboarden + vilken omkörning som återskapar dem.
 EDITABLE = ["strategi", "typ", "kategori", "format", "budskapston", "hogtid", "har_hook"]
 TONE_FIELDS = ["har_hook", "budskapston"]      # classify_tone.py (text)
-VISION_FIELDS = ["format", "kategori"]         # iq_tiktok_content_pipeline.py (video)
+VISION_FIELDS = ["format", "kategori", "har_hook"]   # iq_tiktok_content_pipeline.py (video)
 
 
 def norm(v):

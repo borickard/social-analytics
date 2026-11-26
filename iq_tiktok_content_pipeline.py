@@ -104,7 +104,7 @@ CONTENT_FIELDS = [
 # Fälten vision-modellen ska returnera per video (härledda fält som
 # alkohol_omnamns_verbalt, har_cta och *_rate sätts i main(), inte här).
 VISION_KEYS = [
-    "format", "kategori", "tema", "hook_typ",
+    "format", "kategori", "tema", "hook_typ", "har_hook",
     "text_i_bild", "grafik_beskrivning", "personer_i_bild", "medverkande",
     "cta", "alkohol_i_bild", "alkohol_marke", "alkohol_kontext",
 ]
@@ -119,10 +119,16 @@ VISION_SCHEMA = {
             "enum": ["filmat", "animerat", "skärmavbildning", "voiceover",
                      "talking head", "sketch", "bildinlägg", "övrigt"],
             "description": "Videoformat, mest specifika: animerat; skärmavbildning "
-                           "(inspelning av skärm/app/chatt); talking head (person "
-                           "pratar in i kameran); sketch (skådespelat/komik); "
-                           "voiceover (berättarröst över filmat); filmat (annat "
-                           "filmat); bildinlägg (foto/karusell).",
+                           "(inspelning av skärm/app/chatt); talking head (HELA "
+                           "klippet är en person som pratar rakt in i kameran, "
+                           "vlogg-/selfie-stil, utan egentliga scener eller "
+                           "miljöbyten); sketch (skådespelat/komik); voiceover "
+                           "(berättarröst över filmat); filmat (annat filmat – "
+                           "reportage, intervjuer på stan, scener, klippt b-roll, "
+                           "flera miljöer – ÄVEN om personer pratar); bildinlägg "
+                           "(foto/karusell). Var restriktiv med talking head: "
+                           "finns scener, miljöer eller klippning utöver en person "
+                           "som pratar i kameran → välj filmat.",
         },
         "kategori": {
             "type": "string",
@@ -146,6 +152,23 @@ VISION_SCHEMA = {
                            "först (en scen som egentligen kommer senare). Välj då den typ "
                            "som bäst beskriver greppet (pastaende/chock/humor/statistik). "
                            "Finns inget tydligt hook-grepp i början → 'ovrigt'.",
+        },
+        "har_hook": {
+            "type": "string",
+            "enum": ["ja", "nej"],
+            "description": "Har videon en hook i sina FÖRSTA SEKUNDER? Bedöm på "
+                           "öppningsbildrutorna + det som sägs/visas först – ALDRIG "
+                           "captionen. 'ja' om något av: (a) en direkt fråga till "
+                           "tittaren ställs i början ('Har du nånsin…?', 'Visste du "
+                           "att…?'); (b) ett klipp från längre fram lyfts först (något "
+                           "oväntat/dramatiskt visas direkt, innan ett ev. intro); "
+                           "(c) något visuellt eller ljudmässigt i starten som får en "
+                           "att stanna i scrollen. 'nej' om videon öppnar lugnt/"
+                           "beskrivande ('Hej, jag heter X…', 'Idag är vi ute och "
+                           "ska testa…', 'Välkommen tillbaka') utan sådant grepp. "
+                           "Flertalet inlägg HAR en hook – men en lockande caption "
+                           "räknas inte om själva videon öppnar lamt. Detta är ett "
+                           "VISUELLT omdöme: väg in om öppningsrutorna i sig fångar.",
         },
         "text_i_bild": {
             "type": "array",
@@ -217,6 +240,10 @@ VISION_BODY = (
     "är en direkt fråga i början ELLER något som direkt sticker ut och får en "
     "att vilja se mer – ibland ett kort klipp från längre fram i videon som "
     "lyfts först. Saknas ett sådant grepp i början: hook_typ='ovrigt'.\n"
+    "- har_hook (ja/nej): har videon ett hook-grepp i sina FÖRSTA SEKUNDER? "
+    "Bedöm på öppningsbildrutorna + det som sägs/visas först, ALDRIG captionen. "
+    "Väg in det visuella: ett fängslande öppningsklipp eller en lyft scen "
+    "räknas även om talet är sparsamt. Lamt/beskrivande intro utan grepp = 'nej'.\n"
     "- medverkande: ingen / en_person / flera_personer.\n"
     "- CTA (lista): fånga varje uppmaning oavsett om den är talad, syns i bild "
     "eller är en länk i captionen (t.ex. en webbadress). Tom lista om ingen finns.\n"
