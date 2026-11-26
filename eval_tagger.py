@@ -107,6 +107,37 @@ def report(title, per_field):
         print(f"{fld:14} {acc:>8}  {n:>5}  {SOURCE.get(fld,''):22} {top}")
 
 
+def report_split(title, per):
+    """per: {field: [(pred, truth, is_corrected)]}. Visar fix-grad på RÄTTADE
+    inlägg (ren signal: matchar nya körningen din rättelse?) separat från
+    behålls-grad på oförändrade (bär modell-brus – bara vägledande)."""
+    print(f"\n=== {title} ===")
+    print(f"{'fält':12}  {'FIX (rättade)':>16}  {'behåller (oförändr.)':>22}   kvarvarande fel på rättade")
+    for fld, triples in per.items():
+        cok = cn = aok = an = 0
+        conf = Counter()
+        for pred, t, isc in triples:
+            p, tt = norm(pred), norm(t)
+            if isc:
+                cn += 1
+                if p == tt:
+                    cok += 1
+                else:
+                    conf[(tt or "(tom)", p or "(tom)")] += 1
+            else:
+                an += 1
+                aok += 1 if p == tt else 0
+        fix = f"{cok}/{cn} ({100*cok/cn:.0f}%)" if cn else "—"
+        keep = f"{aok}/{an} ({100*aok/an:.0f}%)" if an else "—"
+        top = ", ".join(f"{tt}→{p} ×{c}" for (tt, p), c in conf.most_common(2))
+        print(f"{fld:12}  {fix:>16}  {keep:>22}   {top}")
+
+
+def corrected_vids(rows, ov, fields):
+    vids = [v for v in rows if any(f in ov.get(v, {}) for f in fields)]
+    return sorted(vids)
+
+
 def baseline(rows, ov):
     per = {}
     dis = []
@@ -138,15 +169,17 @@ def pick_sample(rows, need_fields, limit, seed=0):
     return vids
 
 
-def rerun_tone(rows, ov, limit):
+def rerun_tone(rows, ov, limit, corrected=False):
     try:
         import classify_tone
     except Exception as e:
         sys.exit(f"Kan inte importera classify_tone: {e}")
     if not os.environ.get("ANTHROPIC_API_KEY"):
         sys.exit("Sätt ANTHROPIC_API_KEY.")
-    vids = pick_sample(rows, ["caption", "transkript"], limit)
-    print(f"Kör om tone-klassificeraren på {len(vids)} inlägg …")
+    vids = (corrected_vids(rows, ov, TONE_FIELDS) if corrected
+            else pick_sample(rows, ["caption", "transkript"], limit))
+    print(f"Kör om tone-klassificeraren på {len(vids)} inlägg "
+          f"{'(endast rättade)' if corrected else ''}…")
     per = {f: [] for f in TONE_FIELDS}
     out_rows = []
     for i, vid in enumerate(vids, 1):
@@ -159,17 +192,17 @@ def rerun_tone(rows, ov, limit):
         row_out = {"video_id": vid}
         for f in TONE_FIELDS:
             t = truth_of(vid, f, rows, ov)
-            per[f].append((pred.get(f, ""), t))
+            per[f].append((pred.get(f, ""), t, f in ov.get(vid, {})))
             row_out[f"{f}_gissning"] = pred.get(f, "")
             row_out[f"{f}_facit"] = t
         out_rows.append(row_out)
         if i % 20 == 0:
             print(f"  … {i}/{len(vids)}")
-    report("OMKÖRNING tone (har_hook, budskapston) vs facit", {f: score(p) for f, p in per.items()})
+    report_split("OMKÖRNING tone (har_hook, budskapston)", per)
     _write_rerun("tone", out_rows)
 
 
-def rerun_vision(rows, ov, limit):
+def rerun_vision(rows, ov, limit, corrected=False):
     try:
         import iq_tiktok_content_pipeline as P
     except Exception as e:
@@ -177,8 +210,10 @@ def rerun_vision(rows, ov, limit):
     if not os.environ.get("ANTHROPIC_API_KEY"):
         sys.exit("Sätt ANTHROPIC_API_KEY.")
     import tempfile
-    vids = pick_sample(rows, ["format", "kategori"], limit)
-    print(f"Kör om vision på {len(vids)} inlägg (kräver videofiler lokalt) …")
+    vids = (corrected_vids(rows, ov, VISION_FIELDS) if corrected
+            else pick_sample(rows, ["format", "kategori"], limit))
+    print(f"Kör om vision på {len(vids)} inlägg (kräver videofiler lokalt) "
+          f"{'(endast rättade)' if corrected else ''}…")
     per = {f: [] for f in VISION_FIELDS}
     out_rows = []
     for i, vid in enumerate(vids, 1):
@@ -204,12 +239,12 @@ def rerun_vision(rows, ov, limit):
         row_out = {"video_id": vid}
         for f in VISION_FIELDS:
             t = truth_of(vid, f, rows, ov)
-            per[f].append((pred.get(f, ""), t))
+            per[f].append((pred.get(f, ""), t, f in ov.get(vid, {})))
             row_out[f"{f}_gissning"] = pred.get(f, "")
             row_out[f"{f}_facit"] = t
         out_rows.append(row_out)
         print(f"  [{i}/{len(vids)}] {vid}")
-    report("OMKÖRNING vision (format, kategori) vs facit", {f: score(p) for f, p in per.items()})
+    report_split("OMKÖRNING vision (format, kategori, har_hook)", per)
     _write_rerun("vision", out_rows)
 
 
@@ -231,6 +266,8 @@ def main():
     ap.add_argument("--rerun-tone", action="store_true", help="kör om har_hook/budskapston")
     ap.add_argument("--rerun-vision", action="store_true", help="kör om format/kategori")
     ap.add_argument("--limit", type=int, default=0, help="urvalsstorlek vid omkörning (0=alla)")
+    ap.add_argument("--corrected", action="store_true",
+                    help="kör bara på inlägg du rättat (ren fix-grad, utan modell-brus)")
     args = ap.parse_args()
 
     if not os.path.exists(ENRICHED):
@@ -239,9 +276,9 @@ def main():
     print(f"{len(rows)} inlägg i enriched, {len(ov)} med minst en rättelse.")
 
     if args.rerun_tone:
-        rerun_tone(rows, ov, args.limit)
+        rerun_tone(rows, ov, args.limit, args.corrected)
     elif args.rerun_vision:
-        rerun_vision(rows, ov, args.limit)
+        rerun_vision(rows, ov, args.limit, args.corrected)
     else:
         baseline(rows, ov)
 
