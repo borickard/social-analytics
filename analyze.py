@@ -1239,6 +1239,7 @@ function setPeriod(from,to){periodFrom=from||null;periodTo=to||null;
   document.querySelectorAll('.pill[data-period]').forEach(b=>b.addEventListener('click',()=>{
     const v=b.dataset.period;
     if(v==='all')setPeriod('','');
+    else if(v==='ytd')setPeriod((DMAX||'').slice(0,4)+'-01-01',DMAX);   // 1 jan i senaste årets år → senaste datum
     else setPeriod(daysAgo(+v),DMAX);}));})();
 // "Logga ut" visas bara när sajten serveras (dvs bakom inloggning på Vercel).
 if(AUTOSAVE){const _ll=document.getElementById('logoutlink');if(_ll)_ll.hidden=false;}
@@ -1852,6 +1853,7 @@ def main():
            + '</div>'
            '<div class="period"><span class="lbl">Period</span>'
            '<button class="pill mini active" data-period="all">Allt</button>'
+           '<button class="pill mini" data-period="ytd">Hittills i år</button>'
            '<button class="pill mini" data-period="90">Senaste 90 dagar</button>'
            '<button class="pill mini" data-period="365">Senaste 12 mån</button>'
            '<span class="dates">Från <input type="date" id="pfrom"> till '
